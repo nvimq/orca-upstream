@@ -183,8 +183,28 @@ const MERMAID_PACKAGE = 'node_modules/mermaid/'
  *
  * Measured, not derived: `mobile-web-app-session-dictation-capture.test.mjs` moves the web file
  * aside and walks the closure again, which puts those eight back.
+ *
+ * Then STA-3259 gave the desktop chat card the paused gate mobile already had, and put the rule
+ * both surfaces apply in one module instead of two copies.
+ *
+ *   modules        4323 -> 4324   (+1)
+ *
+ * One module joins: `src/shared/native-chat-paused-gate.ts`, holding the `waiting || blocked`
+ * predicate `use-mobile-native-chat-prompts.ts` used to restate inline and the desktop card now
+ * calls too. Nothing follows it in — its only import is a type, so the runtime graph gains the one
+ * file and no more; an actual edge to `agent-status-types` would have read +2 here rather than +1.
+ *
+ * The trade, recorded rather than waved through: one module on the phone's session route buys a
+ * single definition of what "paused" means for the two chat surfaces that both gate an approval
+ * envelope on it. A second copy is how they drifted apart in the first place, which is the bug
+ * STA-3259 reports. Per ruling 28 above this is a re-recorded census, not a budget breach.
+ *
+ * The local count is deliberately not re-read beside it: this branch cannot walk the closure (the
+ * bundle dependencies are absent outside the `mobile web app bundle` job, where the walk skips),
+ * so a local number here would be one nobody measured — the failure mode the base reading above
+ * calls out. The module total is CI's own reading from that job.
  */
-const SESSION_ROUTE_MODULES = 4323
+const SESSION_ROUTE_MODULES = 4324
 
 const artifactModules = (inputs) => inputs.filter((input) => input.includes(MERMAID_PAGE_ENGINE))
 const packageModules = (inputs) => inputs.filter((input) => input.includes(MERMAID_PACKAGE))
