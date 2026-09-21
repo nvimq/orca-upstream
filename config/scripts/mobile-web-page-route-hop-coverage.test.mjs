@@ -54,7 +54,7 @@ function sameRoute(pushed, declared) {
  * a changed-file row and its diff.
  *
  * The seven C7 rows are the same rule with the arrows all one way: 16 -> 23, every new entry
- * `X -> session`, one from each other page route. The session screen's ten grants are a strict
+ * `X -> session`, one from each other page route. The session screen's fourteen grants are a strict
  * superset of every other route's, so nothing can reach it under the grants it was opened with —
  * and nothing it pushes to leaves, because its own seven targets each declare a subset. A row in
  * the other direction would mean a route had grown a grant the session lacks.

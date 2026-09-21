@@ -4,9 +4,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
  * The page's own AsyncStorage under the durable send journal, which is the one allowlisted value
  * that outgrows what the bridge will carry.
  *
- * Measured on this tree: a journal entry with no attachment serializes to 342 characters and its
- * schema admits 4,096 of them, so 48 unsettled sends put the value past
- * `PAGE_STORAGE_MAX_VALUE_CHARS`. Every page write goes through `page-async-storage`, which the
+ * Measured on this tree: a journal entry with no attachment costs 343 characters in the array —
+ * 342 of its own plus the comma that joins it — and the schema admits 4,096 of them, so 47
+ * unsettled sends measure 16,140 and 48 measure 16,483, past `PAGE_STORAGE_MAX_VALUE_CHARS`. Every
+ * page write goes through `page-async-storage`, which the
  * bundler aliases over the real module, so this is the module the journal actually writes to
  * inside the page — and the reason the refusal must be a rejection rather than a dropped write.
  *
@@ -39,7 +40,7 @@ const hex = (fill: string) => fill.repeat(64)
 /**
  * A journal the module itself reads back, built past the cap out of real entries rather than
  * filler: a value the parser refuses reads as "unreadable" and never reaches the write at all.
- * `ENTRIES_OVER_THE_CAP` is the measured number — one entry serializes to 342 characters.
+ * `ENTRIES_OVER_THE_CAP` is the measured number — one entry costs 343 characters in the array.
  */
 const ENTRIES_OVER_THE_CAP = 48
 

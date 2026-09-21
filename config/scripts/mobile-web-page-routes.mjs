@@ -97,13 +97,13 @@ export const MOBILE_WEB_PAGE_ROUTES = [
     pathname: '/h/[hostId]/review/[worktreeId]',
     grants: ['navigate', 'storage', 'externalLink', 'haptics', 'native.clipboard.write']
   },
-  // The session screen: terminal and chat. Ten grants, every one of them read off a call site in
-  // this route's own closure rather than carried from the design, and it is the only route that
-  // asks for the media verbs or the screencast lane.
+  // The session screen: terminal and chat. Fourteen grants, every one of them read off a call site
+  // in this route's own closure rather than carried from the design, and it is the only route that
+  // asks for the media verbs, the audio verbs or the screencast lane.
   //
   // `navigate` for the Back that pops the native stack and for the seven handoff sites its panels
-  // push from; `storage` for the ten exact keys and two workspace-scoped ones its screens read,
-  // which is what `page-storage-keys.ts` now lists; `externalLink` for the six openers it reaches —
+  // push from; `storage` for the nine exact keys this route added to `page-storage-keys.ts` and the
+  // two workspace-scoped ones beside them; `externalLink` for the six openers it reaches —
   // a terminal link tap whose open mode is the phone's browser, the Markdown and file readers, and
   // the PR segment it docks; `haptics` for twenty-four trigger sites, which is the most of any
   // route. `native.clipboard.write` has six call sites (the quick-command row, the sheets, the diff

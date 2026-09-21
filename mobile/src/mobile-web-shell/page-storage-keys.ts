@@ -147,7 +147,8 @@ export function isPageStorageKeyForRoute(
  * on, and the names of whatever was left out.
  *
  * The send journal is why this exists and is not a hypothetical. Measured on this tree: one entry
- * with no attachment serializes to 342 characters, so 48 unsettled sends put the value past
+ * with no attachment costs 343 characters in the array — 342 of its own plus the comma that joins
+ * it — so 47 unsettled sends measure 16,140 and 48 measure 16,483, past
  * `PAGE_STORAGE_MAX_VALUE_CHARS`, and the journal's own schema admits 4,096 of them. Handed to
  * `init` whole, the page's `BridgeInitStorageSchema` refuses the *frame* — not the key — and the
  * session screen never opens at all. Dropping the key instead leaves the page reading a default,
