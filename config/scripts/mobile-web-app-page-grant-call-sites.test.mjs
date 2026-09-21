@@ -18,7 +18,7 @@ import { MOBILE_WEB_PAGE_ROUTES } from './mobile-web-page-routes.mjs'
 import {
   PAGE_GRANT_CALL_SITES,
   grantCallSites,
-  grantsMissingForRoutes,
+  grantsMissingForRow,
   grantsNeeded,
   moduleReachesGrantRow
 } from './mobile-web-app-page-grant-call-sites.mjs'
@@ -28,12 +28,17 @@ const describeClosure = mobileWebAppDependenciesPresent() ? describe : describe.
 
 const SESSION = '/h/[hostId]/session/[worktreeId]'
 
+/** Memoised: every case below walks all eight, and a closure is a bundle the walk builds. */
+const closures = new Map()
+
 function closureOf(pathname) {
   const mod = PAGE_ROUTE_MODULES.get(pathname)
   if (mod === undefined) {
     throw new Error(`${pathname} has no route module, so no closure can be read for it`)
   }
-  return mobileWebAppRouteClosure(mod)
+  const held = closures.get(pathname) ?? mobileWebAppRouteClosure(mod)
+  closures.set(pathname, held)
+  return held
 }
 
 /**
@@ -48,10 +53,12 @@ function closureOf(pathname) {
  * Exact, so it reds in both directions: adding the grant to either route empties an entry here and
  * a new gap anywhere adds one.
  */
-const KNOWN_UNDECLARED = [
-  '/h/[hostId] needs externalLink',
-  '/h/[hostId]/agent-history/[worktreeId] needs externalLink'
-]
+const KNOWN_UNDECLARED = new Map([
+  [
+    'externalLink',
+    ['/h/[hostId] needs externalLink', '/h/[hostId]/agent-history/[worktreeId] needs externalLink']
+  ]
+])
 
 describe('the call-site reader', () => {
   const navigate = PAGE_GRANT_CALL_SITES[0]
@@ -134,41 +141,44 @@ describeClosure(
       expect(mapped).toEqual(declared)
     })
 
-    it('holds every registered page route to the grants its own call sites need', async () => {
-      expect(await grantsMissingForRoutes(mobileDir, MOBILE_WEB_PAGE_ROUTES, closureOf)).toEqual(
-        KNOWN_UNDECLARED
-      )
-    })
+    /**
+     * One case per row, named after its own grants.
+     *
+     * Per row rather than one check over the manifest, because the point is attribution: striking
+     * `native.clipboard.read` out of an entry has to red a case that says so, and a single
+     * whole-manifest assertion reds the same way whichever grant went missing.
+     */
+    it.each(PAGE_GRANT_CALL_SITES.map((row) => [row.grants.join(' + '), row]))(
+      'declares %s on every registered route whose own call sites reach it',
+      async (name, row) => {
+        expect(
+          await grantsMissingForRow(mobileDir, MOBILE_WEB_PAGE_ROUTES, closureOf, row)
+        ).toEqual(KNOWN_UNDECLARED.get(name) ?? [])
+      }
+    )
 
     /**
-     * One case per row, each the control for its own grant: the same rule, driven over the session
-     * entry with that grant struck out. This is what makes removing any one of the six red a case
-     * named after it rather than nothing at all.
+     * The control for each of those, self-contained on purpose.
+     *
+     * Built from what the session route's own closure reaches rather than from what its entry
+     * declares, so a case stays green whatever the manifest says and reds only when the rule stops
+     * working. Reading the manifest here instead would make every row red as soon as any one grant
+     * went missing, which is the attribution the case above exists to give.
      */
     it.each(PAGE_GRANT_CALL_SITES.map((row) => [row.grants.join(' + '), row]))(
       'reds the session route when it is registered without %s',
       async (_name, row) => {
-        const session = MOBILE_WEB_PAGE_ROUTES.find((route) => route.pathname === SESSION)
-        expect(session, 'the session route is registered').toBeDefined()
-        const without = session.grants.filter((grant) => !row.grants.includes(grant))
-        expect(without.length, 'the session route declares every grant in this row').toBe(
-          session.grants.length - row.grants.length
+        const needed = grantsNeeded(mobileDir, await closureOf(SESSION))
+        expect(needed, 'the session route reaches this row').toEqual(
+          expect.arrayContaining(row.grants)
         )
-        expect(
-          await grantsMissingForRoutes(
-            mobileDir,
-            [{ pathname: SESSION, grants: without }],
-            closureOf
-          )
-        ).toEqual(row.grants.map((grant) => `${SESSION} needs ${grant}`))
-        // And with them it passes, so each case is a rule and not a wall.
-        expect(
-          await grantsMissingForRoutes(
-            mobileDir,
-            [{ pathname: SESSION, grants: session.grants }],
-            closureOf
-          )
-        ).toEqual([])
+        const entry = (grants) => [{ pathname: SESSION, grants }]
+        // Declaring everything it reaches passes, so each case is a rule and not a wall.
+        expect(await grantsMissingForRow(mobileDir, entry(needed), closureOf, row)).toEqual([])
+        const without = needed.filter((grant) => !row.grants.includes(grant))
+        expect(await grantsMissingForRow(mobileDir, entry(without), closureOf, row)).toEqual(
+          row.grants.map((grant) => `${SESSION} needs ${grant}`)
+        )
       }
     )
 

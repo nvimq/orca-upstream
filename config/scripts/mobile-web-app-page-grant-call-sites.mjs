@@ -127,20 +127,39 @@ export function grantsNeeded(mobileDir, closure) {
 }
 
 /**
- * Every grant a route's closure needs and its entry does not name, as `<pathname> needs <grant>`.
+ * One row's verdict: every route whose closure reaches that seam and whose entry does not name its
+ * grants, as `<pathname> needs <grant>`.
  *
- * One implementation, driven by both the check and its control: a control that re-implemented the
- * filter would prove the control works and say nothing about the rule.
+ * Per row rather than per manifest, so a grant struck out of an entry reds a case named after that
+ * grant. A single whole-manifest check would red under every row at once and say only that
+ * something was missing.
  */
-export async function grantsMissingForRoutes(mobileDir, routes, closureOf) {
+export async function grantsMissingForRow(mobileDir, routes, closureOf, row) {
   const missing = []
   for (const route of routes) {
     const closure = await closureOf(route.pathname)
-    for (const grant of grantsNeeded(mobileDir, closure)) {
+    if (grantCallSites(mobileDir, closure, row).length === 0) {
+      continue
+    }
+    for (const grant of row.grants) {
       if (!route.grants.includes(grant)) {
         missing.push(`${route.pathname} needs ${grant}`)
       }
     }
+  }
+  return missing
+}
+
+/**
+ * Every row's verdict at once, in row order.
+ *
+ * One implementation under both the check and its control: a control that re-implemented the
+ * filter would prove the control works and say nothing about the rule.
+ */
+export async function grantsMissingForRoutes(mobileDir, routes, closureOf) {
+  const missing = []
+  for (const row of PAGE_GRANT_CALL_SITES) {
+    missing.push(...(await grantsMissingForRow(mobileDir, routes, closureOf, row)))
   }
   return missing
 }
