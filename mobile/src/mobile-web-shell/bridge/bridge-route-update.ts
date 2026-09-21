@@ -82,13 +82,6 @@ export type BridgeRouteUpdate =
  */
 export function readBridgeRouteUpdate(args: {
   held: BridgeInitRoute | null
-  /**
-   * The route a frame has actually reached the page with, which is what movement is measured
-   * against. Not `held`: a frame the view refused leaves the page on the older route while the
-   * host already holds the newer one, and measuring against `held` reads that owed route as one
-   * that did not move — so the retry, and the repeat tap, are both held and the page never gets it.
-   */
-  delivered: BridgeInitRoute | null
   next: BridgeInitRoute
   /** What the page's last `ready` declared. Empty for every page built before this existed. */
   accepts: readonly string[]
@@ -103,7 +96,7 @@ export function readBridgeRouteUpdate(args: {
   if (parsed.data.pathname !== held.pathname) {
     return { kind: 'refuse', issue: 'not-this-screen' }
   }
-  const moved = bridgeRouteMoved(args.delivered, parsed.data)
+  const moved = bridgeRouteMoved(held, parsed.data)
   const sendable = moved && args.deliverable && args.accepts.includes(BRIDGE_ROUTE_UPDATE_ACCEPT)
   return { kind: sendable ? 'send' : 'hold', route: parsed.data }
 }

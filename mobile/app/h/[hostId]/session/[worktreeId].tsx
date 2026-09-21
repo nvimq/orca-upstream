@@ -44,26 +44,12 @@ export default function MobileSessionScreen() {
   const router = useRouter()
   const native = <MobileSessionRouteScreen />
   const paneKey = firstParam(params.paneKey) ?? ''
-  // Empty rather than absent, which is what the notification hook wrote and what the route builder
-  // below drops: a cleared key and a key that was never there are the same route.
-  //
-  // Spent only by the pane it names. The report carries the route a frame reached the page with,
-  // and the host may be publishing a newer one behind it: a tap that moved while the first frame
-  // was in flight lands the older pane first, and clearing on that would wipe the param for the
-  // pane the page has not been given yet.
-  const clearPaneKey = useCallback(
-    (delivered: { params?: Record<string, string> }) => {
-      if (paneKey === '' || (delivered.params?.paneKey ?? '') !== paneKey) {
-        return
-      }
-      router.setParams({ paneKey: '' })
-    },
-    [paneKey, router]
-  )
   // The reader erasing its own request (ruling 34): the page applied a pane and names it back, and
   // this is where the param it came on lives. Compared rather than obeyed — a tap that moved on
   // while the page was applying the one before it leaves a newer key here, and that one is not
-  // spent yet.
+  // spent yet. Written empty rather than removed, which is what the notification hook wrote and
+  // what the route builder below drops: a cleared key and a key that was never there are the same
+  // route.
   const erasePaneKey = useCallback(
     (param: 'paneKey', value: string) => {
       if (param !== 'paneKey' || paneKey === '' || value !== paneKey) {
@@ -108,7 +94,6 @@ export default function MobileSessionScreen() {
       hostId={hostId}
       route={route}
       fallback={native}
-      onRouteDelivered={clearPaneKey}
       onRouteParamClear={erasePaneKey}
     />
   )

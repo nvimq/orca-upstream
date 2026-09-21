@@ -41,16 +41,11 @@ export type BridgeHost = {
    * page too old to name it reads a second `init` as a replacement. A different pathname is a
    * different screen and is refused here — that is a remount, which is what the shell already does.
    *
-   * Answers nothing: the host keeps the route pending until a frame carrying it reaches the page
-   * and reports that through `onRouteDelivered`. The caller's next move is to clear the param it
-   * delivered, and clearing one the page never received would spend the tap on nothing.
+   * Answers nothing, and nothing is tracked (ruling 34): a frame the view refused is repaired by
+   * the next `init`, and the request it carried is spent by the page, which erases the param it
+   * applied.
    */
   publishRoute: (next: BridgeInitRoute) => void
-  /**
-   * Another chance for a route whose frame never landed, for a caller that has just made delivery
-   * possible again: the view handle this host posts on coming back under the same page.
-   */
-  retryPendingRoute: () => void
   dispose: () => void
 }
 
@@ -79,9 +74,10 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
   const routes = createBridgeHostRoute({
     opened: options.route,
     refused: routeGrantsIssue !== null,
-    sendInit: () => sendInit(),
-    onRefused: (issue) => options.onDiagnostic?.({ kind: 'route-update-refused', issue }),
-    onDelivered: (delivered) => options.onRouteDelivered(delivered)
+    sendInit: () => {
+      sendInit()
+    },
+    onRefused: (issue) => options.onDiagnostic?.({ kind: 'route-update-refused', issue })
   })
   let closed = false
   // One document's turn at the bridge. `close` ends it and the next `ready` begins the next one;
@@ -145,13 +141,13 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
    * False for a refused route, which is answered with nothing, and false for a frame the view
    * would not take.
    */
-  async function sendInit(): Promise<boolean> {
+  function sendInit(): void {
     const route = routes.current()
     if (route === null) {
-      return false
+      return
     }
     initSent = true
-    const landed = await postJson(
+    void postJson(
       JSON.stringify(
         createBridgeInitFrame({
           sessionId,
@@ -169,10 +165,6 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
         })
       )
     )
-    if (landed) {
-      routes.landed(route)
-    }
-    return landed
   }
 
   function sendReply(id: string, payload: RpcResponse): void {
@@ -326,11 +318,10 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
     if (message.type === 'ready') {
       serving = true
       routes.readReady(message)
-      void sendInit()
-      // Every time it is asked, not once: the page re-asks on a backoff, and the shell's wait ends
-      // on the first of those that lands rather than on a particular one. Whether the frame reached
-      // the page is a different fact that settles later, and it is reported by `onRouteDelivered`:
-      // a refused route answers the ask with nothing, and a view that is gone refuses the frame.
+      // Every time it is asked, not once: the page re-asks on a backoff, and each ask is answered
+      // with the route the shell holds now. That is the whole repair path for a frame that never
+      // arrived (ruling 34) — nothing here waits on one, and nothing retries one.
+      sendInit()
       options.onPageReady()
       return
     }
@@ -405,9 +396,6 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
     },
     publishRoute: (next) => {
       routes.publish(next, serving && initSent)
-    },
-    retryPendingRoute: () => {
-      routes.retry(serving && initSent)
     },
     dispose
   }

@@ -27,12 +27,6 @@ type ScreenDependencies = {
   posted: string[]
   /** Whether the view refuses what it is handed, which is a page the post never reached. */
   postFails: boolean
-  /** Whether a post waits for the case to settle it, so a case can render while one is in flight. */
-  holdPosts: boolean
-  /** The settlers for posts the view has taken and not answered. */
-  heldPosts: (() => void)[]
-  /** The handle the view last attached, so a case can make the host lose and regain one. */
-  handle: { postBridgeMessage: (json: string) => Promise<void> } | null
   state: MobileWebShellSessionState
   /** Null for every case but the bridge's: with no client the hook builds no host at all. */
   client: FakeRpcClient | null
@@ -71,9 +65,6 @@ const dependencies = vi.hoisted((): ScreenDependencies => {
     viewRenders: 0,
     posted: [],
     postFails: false,
-    holdPosts: false,
-    heldPosts: [],
-    handle: null,
     state: { kind: 'checking' },
     client: null
   }
@@ -162,19 +153,14 @@ vi.mock('../../modules/orca-mobile-web-shell/src', async () => {
       // post rejected as a view that is gone, so no case could see a frame reach the page.
       const attach = props.ref
       React.useLayoutEffect(() => {
-        const handle = {
+        attach?.({
           postBridgeMessage: (json: string) => {
             dependencies.posted.push(json)
-            if (dependencies.postFails) {
-              return Promise.reject(new Error('the view would not take it'))
-            }
-            return dependencies.holdPosts
-              ? new Promise<void>((settle) => dependencies.heldPosts.push(() => settle()))
+            return dependencies.postFails
+              ? Promise.reject(new Error('the view would not take it'))
               : Promise.resolve()
           }
-        }
-        dependencies.handle = handle
-        attach?.(handle)
+        })
         return () => {
           attach?.(null)
         }
@@ -315,9 +301,6 @@ beforeEach(() => {
   dependencies.viewRenders = 0
   dependencies.posted.length = 0
   dependencies.postFails = false
-  dependencies.holdPosts = false
-  dependencies.heldPosts.length = 0
-  dependencies.handle = null
   dependencies.client = null
   dependencies.routeGrants = DEFAULT_ROUTE_GRANTS
   dependencies.back.mockReset()
@@ -480,27 +463,22 @@ describe('the hybrid shell screen', () => {
   })
 
   /**
-   * One screen whose route this case moves, and everything the page was told about it.
+   * One screen whose route this case moves, and every frame that went out for it.
    *
-   * The delivery family renders the same way every time — a fresh element per route so the prop
-   * identity moves, the delivery callback collecting what landed, a `ready` declaring the accept
-   * the second `init` needs — and a case that spells all of that out reads as setup rather than as
-   * the fact it pins.
+   * The shell tracks nothing about delivery (ruling 34): what a case can see here is what reached
+   * the wire, and the request a frame carried is spent by the page, not by this screen.
    */
-  async function renderForDelivery(params: Record<string, string>): Promise<{
+  async function renderForRoute(params: Record<string, string>): Promise<{
     tree: ReactTestRenderer
-    delivered: { pathname: string; params?: Record<string, string> }[]
-    paneKeys: () => string[]
+    initRoutes: () => (Record<string, string> | undefined)[]
     move: (next: Record<string, string>) => Promise<void>
     ready: (accepts?: readonly string[]) => Promise<void>
   }> {
-    const delivered: { pathname: string; params?: Record<string, string> }[] = []
     const element = (next: Record<string, string>) =>
       createElement(MobileWebShellScreen, {
         hostId: 'host-1',
         route: { pathname: '/h/host-1', params: next },
-        fallback: createElement(NativeFallback),
-        onRouteDelivered: (route) => delivered.push(route)
+        fallback: createElement(NativeFallback)
       })
     dependencies.state = readyState('session-one')
     const rendered: { tree: ReactTestRenderer | null } = { tree: null }
@@ -514,8 +492,14 @@ describe('the hybrid shell screen', () => {
     mounted.push(tree)
     return {
       tree,
-      delivered,
-      paneKeys: () => delivered.map((route) => route.params?.paneKey ?? ''),
+      initRoutes: () =>
+        dependencies.posted
+          .map(
+            (json) =>
+              JSON.parse(json) as { type: string; route?: { params?: Record<string, string> } }
+          )
+          .filter((frame) => frame.type === 'init')
+          .map((frame) => frame.route?.params),
       move: async (next) => {
         await act(async () => {
           tree.update(element(next))
@@ -532,155 +516,48 @@ describe('the hybrid shell screen', () => {
   }
 
   /**
-   * A route that moved before the host existed (CodeRabbit on `:271`).
+   * A route that moved under a screen that stayed mounted (ruling 33.1, as ruling 34 leaves it).
    *
-   * The effect recorded the route's key and then published, so a publish the hook refused for
-   * having no host counted as delivered anyway. This pins the delivery contract across that gap:
-   * the caller is told once, and only when a frame carrying the route actually reached the page.
-   *
-   * It does not reproduce a lost tap, and the fix beside it is hygiene rather than a repair: the
-   * host is built from the route the render holds, so a route that moved before it existed is in
-   * the first `init` regardless, and `publishRoute` then answers "did not move". What the fix
-   * removes is a key recorded for a frame nobody sent.
+   * One frame per move and none for a render that moved nothing. Whether it arrived is not asked
+   * here and is not asked anywhere: the page's next `ready` is answered with the route the shell
+   * holds then, which is the whole repair path.
    */
-  it('reports a route that moved before the host existed once, when the page receives it', async () => {
-    dependencies.client = null
-    const page = await renderForDelivery({ paneKey: '' })
-    // The tap, with no host to take it: nothing reached the page, so nothing is reported.
-    await page.move({ paneKey: 'pane-1' })
-    expect(page.delivered).toEqual([])
+  it('posts one init for a route that moved, and none for a render that moved nothing', async () => {
     dependencies.client = createFakeRpcClient()
-    await page.move({ paneKey: 'pane-1' })
-    // Still nothing: the host now holds that route and has not sent anything yet.
-    expect(page.delivered).toEqual([])
-    await page.ready([])
-    // The `init` that answered the ask carried it, so the caller may spend the param — once.
-    expect(page.delivered).toEqual([{ pathname: '/h/host-1', params: { paneKey: 'pane-1' } }])
-  })
-
-  /**
-   * A frame the view would not take (CodeRabbit on `bridge-host.ts:104-126`).
-   *
-   * `sendInit` answered "sent" the moment it handed the JSON to `post`, and the post's rejection
-   * was reported a turn later as a diagnostic. So the screen spent the one-shot `paneKey` on a
-   * frame the page never received: the switch cleared the native param and the tap was gone.
-   */
-  it('reports no delivery for an init the view refused, so the param is not spent', async () => {
-    dependencies.client = createFakeRpcClient()
-    dependencies.postFails = true
-    const warned = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-    const page = await renderForDelivery({ paneKey: 'pane-1' })
-    await page.ready([])
-    // The frame was built and handed over, and the view refused it.
-    expect(dependencies.posted).toHaveLength(1)
-    expect(page.delivered).toEqual([])
-    // The page still asked, which is a different fact from the frame landing.
-    expect(dependencies.reportPageReady).toHaveBeenCalled()
-    warned.mockRestore()
-  })
-
-  /**
-   * A route whose frame the view refused is still owed to the page (round 4).
-   *
-   * The screen used to own the attempt: it recorded the route it had tried and cleared that record
-   * on a refusal, so the only thing that could try again was another render. A view that comes
-   * back — the native handle re-attaching under the same mounted page — is not one, so the pane
-   * the user asked for stayed on the shell's side forever. The host owns it now: the route stays
-   * pending until a post resolves true, and a regained handle is one of the moments it retries.
-   */
-  it('delivers a pending route when the host regains a view handle', async () => {
-    dependencies.client = createFakeRpcClient()
-    dependencies.postFails = true
-    const warned = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-    const page = await renderForDelivery({ paneKey: 'pane-1' })
+    const page = await renderForRoute({ paneKey: '' })
     await page.ready()
-    expect(page.delivered).toEqual([])
-    // The same page, a handle it may be posted on again.
+    expect(page.initRoutes()).toEqual([{ paneKey: '' }])
+    await page.move({ paneKey: 'pane-1' })
+    expect(page.initRoutes()).toEqual([{ paneKey: '' }, { paneKey: 'pane-1' }])
+    await page.move({ paneKey: 'pane-1' })
+    expect(page.initRoutes()).toHaveLength(2)
+  })
+
+  it('answers every ask with the route it holds then, which is how a lost frame is repaired', async () => {
+    dependencies.client = createFakeRpcClient()
+    dependencies.postFails = true
+    const warned = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const page = await renderForRoute({ paneKey: '' })
+    await page.ready()
+    await page.move({ paneKey: 'pane-1' })
+    // Both frames were refused by the view, and nothing here is holding either of them.
+    expect(dependencies.posted).toHaveLength(2)
     dependencies.postFails = false
-    const probe = byName(page.tree, 'ShellViewProbe')[0]
-    await act(async () => {
-      probe?.props.ref(null)
-      probe?.props.ref(dependencies.handle)
-    })
-    expect(page.delivered).toEqual([{ pathname: '/h/host-1', params: { paneKey: 'pane-1' } }])
+    await page.ready()
+    expect(page.initRoutes().at(-1)).toEqual({ paneKey: 'pane-1' })
     warned.mockRestore()
   })
 
-  /**
-   * A render between the frame and its answer does not cancel the delivery (round 4).
-   *
-   * The screen's effect cancelled its own pending answer on cleanup, so any render while a post
-   * was in flight — a state change anywhere above, which is routine — dropped the report the
-   * switch spends to clear the param. The page had the route and the shell never heard.
-   */
-  it('delivers once when the screen re-renders while the frame is in flight', async () => {
+  it('sends no second init to a page that never said it takes one', async () => {
     dependencies.client = createFakeRpcClient()
-    const page = await renderForDelivery({ paneKey: '' })
-    await page.ready()
-    expect(page.delivered).toHaveLength(1)
-    dependencies.holdPosts = true
+    const page = await renderForRoute({ paneKey: '' })
+    // A page built before route updates existed declares nothing, and reads a second `init` as a
+    // replacement: the route still moves, so its next `ready` is answered with the new one.
+    await page.ready([])
     await page.move({ paneKey: 'pane-1' })
-    expect(dependencies.heldPosts).toHaveLength(1)
-    await page.move({ paneKey: 'pane-1' })
-    // The route did not move, so the render in flight costs no second frame.
-    expect(dependencies.heldPosts).toHaveLength(1)
-    await act(async () => {
-      dependencies.heldPosts[0]?.()
-    })
-    expect(page.paneKeys()).toEqual(['', 'pane-1'])
-  })
-
-  /**
-   * A pane asked for while the frame for the one before it is still in flight (round 5).
-   *
-   * One frame at a time is right — a second copy of `init` on the wire for a route already being
-   * sent is waste — but the held route that was refused a turn had nothing to wake it: the post
-   * settling only cleared the flag. So the newer pane sat until a `ready`, a handle or another
-   * tap happened along, and on a mounted page none of those is coming. A landing is now itself a
-   * moment to publish again, while what the host holds is not what the page has.
-   */
-  it('delivers a pane asked for during the frame before it, in order', async () => {
-    dependencies.client = createFakeRpcClient()
-    const page = await renderForDelivery({ paneKey: '' })
-    await page.ready()
-    dependencies.holdPosts = true
-    await page.move({ paneKey: 'pane-1' })
-    await page.move({ paneKey: 'pane-2' })
-    // Still one frame: the second pane is held, not sent alongside the first.
-    expect(dependencies.heldPosts).toHaveLength(1)
-    await act(async () => {
-      dependencies.heldPosts[0]?.()
-    })
-    // The landing is what publishes the one behind it.
-    expect(dependencies.heldPosts).toHaveLength(2)
-    await act(async () => {
-      dependencies.heldPosts[1]?.()
-    })
-    expect(page.paneKeys()).toEqual(['', 'pane-1', 'pane-2'])
-    expect(dependencies.lifecycle.filter((entry) => entry.startsWith('mount:'))).toHaveLength(1)
-  })
-
-  /**
-   * The same pane, asked for twice, after the first frame was refused (round 4).
-   *
-   * The host moved its held route on the refused attempt, so the second tap read as a route that
-   * had not moved and was held rather than sent: the page never got the pane and the param was
-   * never spent. Movement is measured against what the page received, so the repeat tap lands.
-   */
-  it('delivers a repeat tap for the pane whose frame never landed', async () => {
-    dependencies.client = createFakeRpcClient()
-    const warned = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-    const page = await renderForDelivery({ paneKey: '' })
-    await page.ready()
-    expect(page.delivered).toHaveLength(1)
-    dependencies.postFails = true
-    await page.move({ paneKey: 'pane-1' })
-    expect(page.delivered).toHaveLength(1)
-    // The tap was never spent, so the next one carries the same pane.
-    dependencies.postFails = false
-    await page.move({ paneKey: 'pane-1' })
-    expect(page.paneKeys()).toEqual(['', 'pane-1'])
-    warned.mockRestore()
+    expect(page.initRoutes()).toEqual([{ paneKey: '' }])
+    await page.ready([])
+    expect(page.initRoutes()).toEqual([{ paneKey: '' }, { paneKey: 'pane-1' }])
   })
 
   it('ends that wait on the page asking for a session', async () => {

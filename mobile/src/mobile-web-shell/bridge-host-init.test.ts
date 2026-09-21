@@ -149,31 +149,18 @@ describe('init and state', () => {
     }
   })
 
-  it('reports no delivery for a refused route, so its param is not spent', async () => {
-    // The screen clears a one-shot param when the page has been handed the route (ruling 33.1),
-    // and a refused route answers the `ready` without sending anything: the caller would spend a
-    // notification tap the page never received. Unreachable from the session switch, which parses
-    // the route before it mounts the shell, and the prop's contract says so anyway.
+  it('answers a ready for a refused route with nothing at all', async () => {
+    // The page is still told it was heard, which is a different fact: a refused route has no
+    // honest `init` behind it, so the ask is answered with no frame rather than with an empty one.
+    // Unreachable from the session switch, which parses the route before it mounts the shell.
     const bridge = harness({ route: { pathname: '/h/a b' } })
     bridge.host.receive(clientFrame({ type: 'ready' }))
     await Promise.resolve()
     expect(bridge.posted).toEqual([])
     expect(bridge.pageReadyCount()).toBe(1)
-    expect(bridge.routeDeliveries()).toEqual([])
   })
 
-  it('reports the delivery once an init reached the page', async () => {
-    const bridge = harness({ route: { pathname: '/h/host-a' } })
-    bridge.host.receive(clientFrame({ type: 'ready' }))
-    // Settled after the post, which is the whole point: readiness is the ask, this is the landing.
-    for (let turn = 0; turn < 4; turn += 1) {
-      await Promise.resolve()
-    }
-    expect(bridge.posted).toHaveLength(1)
-    expect(bridge.routeDeliveries()).toEqual([{ pathname: '/h/host-a' }])
-  })
-
-  it('reports no delivery when the view refuses the frame', async () => {
+  it('reports a frame the view would not take, and waits for the next ask (ruling 34)', async () => {
     const bridge = harness({
       route: { pathname: '/h/host-a' },
       post: () => Promise.reject(new Error('the view is gone'))
@@ -182,8 +169,12 @@ describe('init and state', () => {
     for (let turn = 0; turn < 4; turn += 1) {
       await Promise.resolve()
     }
-    expect(bridge.routeDeliveries()).toEqual([])
     expect(bridge.diagnostics.map((diagnostic) => diagnostic.kind)).toContain('post-failed')
+    // Nothing is retried and nothing is held: the page's own backoff asks again, and that ask is
+    // answered with the route the shell holds then.
+    expect(bridge.posted).toHaveLength(1)
+    bridge.host.receive(clientFrame({ type: 'ready' }))
+    expect(bridge.posted).toHaveLength(2)
   })
 
   it('opens a session for the routes a screen actually produces', () => {

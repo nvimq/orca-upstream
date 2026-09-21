@@ -132,17 +132,6 @@ export type MobileWebShellScreenProps = {
    */
   fallback: ReactNode
   /**
-   * Called once the page has been handed this route, so a caller carrying a one-shot param can
-   * clear it (the session switch and its `paneKey`, ruling 33.1).
-   *
-   * Both ways a route reaches the page: the `init` that answered its `ready`, and a re-sent one
-   * for a route that moved while the screen stayed mounted. Never for a publish that posted
-   * nothing — a param cleared after a frame nobody sent is a tap the page never heard. Only a
-   * switch whose key leaves a param out ever sees the second kind; every other one keys on the
-   * whole route, so a param change there is a remount.
-   */
-  onRouteDelivered?: (route: BridgeInitRoute) => void
-  /**
    * The page applied a one-shot route param and asks for it to be erased (ruling 34), naming what
    * it applied. Only a caller that put one on the route ever hears this, and the comparison is
    * that caller's: it holds the param, and a tap that moved on since leaves a newer value there.
@@ -162,7 +151,6 @@ export function MobileWebShellScreen({
   hostId,
   route,
   fallback,
-  onRouteDelivered,
   onRouteParamClear,
   runtime
 }: MobileWebShellScreenProps) {
@@ -225,14 +213,6 @@ export function MobileWebShellScreen({
     onPageReady: () => {
       reportPageReady()
       void refreshStorage()
-    },
-    // Registered once per host rather than per publish: the frame that carries a route may be one
-    // this screen never asked for — the `init` answering a reload, or a retry of one the view
-    // refused — and a render between the ask and the answer must not lose the report. The page
-    // asking and a frame reaching it are two facts, and a param spent on the first is spent on a
-    // frame a view that was gone refused.
-    onRouteDelivered: (delivered) => {
-      onRouteDelivered?.(delivered)
     },
     onRouteParamClear: (param, value) => {
       onRouteParamClear?.(param, value)

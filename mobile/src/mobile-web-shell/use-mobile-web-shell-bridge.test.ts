@@ -152,7 +152,6 @@ function Harness(props: {
     // absorb: rebuilding the host here would settle every pending request on each render.
     onPageFault: (error) => props.faults.push(error),
     onRouteRefused: () => {},
-    onRouteDelivered: () => {},
     onRouteParamClear: () => {},
     onBinaryFramesDropped: (total) => props.probe.droppedBinaryFrames.push(total),
     onPageReady: () => {

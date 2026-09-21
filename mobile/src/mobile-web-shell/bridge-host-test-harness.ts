@@ -47,8 +47,6 @@ export type Harness = {
   pageReadyCount: () => number
   /** One entry per `ready` answered, saying whether its `init` reached the page. Filled as each
    *  post settles, so a case reads it after awaiting the turn the post resolves on. */
-  /** Every route a frame actually reached the page with, in the order they landed. */
-  routeDeliveries: () => readonly BridgeInitRoute[]
   /** Every clear the page asked for, in order. */
   routeParamClears: () => readonly { param: string; value: string }[]
   routeRefusals: string[]
@@ -108,7 +106,6 @@ export function harness(
   const storageWrites: { key: string; value: string | null }[] = []
   let pageReadies = 0
   /** One entry per `ready` answered, saying whether an `init` actually went out for it. */
-  const routeDeliveries: BridgeInitRoute[] = []
   const routeParamClears: { param: string; value: string }[] = []
   const routeRefusals: string[] = []
   const pageFaults: BridgeErrorCapture[] = []
@@ -133,7 +130,6 @@ export function harness(
     onPageReady: () => {
       pageReadies += 1
     },
-    onRouteDelivered: (route) => routeDeliveries.push(route),
     onRouteParamClear: (param, value) => routeParamClears.push({ param, value }),
     onRouteRefused: (issue) => routeRefusals.push(issue),
     onNavigate: options.onNavigate ?? ((href) => navigations.push(href)),
@@ -190,7 +186,6 @@ export function harness(
     backPops,
     storageWrites,
     pageReadyCount: () => pageReadies,
-    routeDeliveries: () => routeDeliveries,
     routeParamClears: () => routeParamClears,
     routeRefusals,
     pageFaults,

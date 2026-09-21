@@ -50,8 +50,7 @@ export type MobileWebShellBridgeView = {
   readonly onBridgeMessage: (event: MobileWebShellBridgeMessageEvent) => void
   /**
    * Hands the mounted host a rewritten route for the screen it is already serving. Dropped when
-   * there is no host yet; the route the host is built from carries it instead, and either way the
-   * page is told through `onRouteDelivered` rather than through an answer here.
+   * there is no host yet; the route the host is built from carries it instead.
    */
   readonly publishRoute: (route: BridgeInitRoute) => void
 }
@@ -97,8 +96,6 @@ export function useMobileWebShellBridge(args: {
   onPageFault: (error: BridgeErrorCapture) => void
   /** The page asked for a session. Reported so the screen can stop waiting for it. */
   onPageReady: () => void
-  /** A frame carrying that route reached the page, so a one-shot param on it may be spent. */
-  onRouteDelivered: (route: BridgeInitRoute) => void
   /** The page applied a one-shot route param and asks for it to be erased (ruling 34). */
   onRouteParamClear: (param: BridgeClearableRouteParam, value: string) => void
   /** This shell named a screen the protocol does not allow, so no session is served. */
@@ -138,7 +135,6 @@ export function useMobileWebShellBridge(args: {
   const readStorageRef = useRef(args.readStorage)
   const pageFaultRef = useRef(args.onPageFault)
   const pageReadyRef = useRef(args.onPageReady)
-  const routeDeliveredRef = useRef(args.onRouteDelivered)
   const routeParamClearRef = useRef(args.onRouteParamClear)
   const routeRefusedRef = useRef(args.onRouteRefused)
   const binaryFramesDroppedRef = useRef(args.onBinaryFramesDropped)
@@ -158,7 +154,6 @@ export function useMobileWebShellBridge(args: {
     readStorageRef.current = args.readStorage
     pageFaultRef.current = args.onPageFault
     pageReadyRef.current = args.onPageReady
-    routeDeliveredRef.current = args.onRouteDelivered
     routeParamClearRef.current = args.onRouteParamClear
     routeRefusedRef.current = args.onRouteRefused
     binaryFramesDroppedRef.current = args.onBinaryFramesDropped
@@ -171,7 +166,6 @@ export function useMobileWebShellBridge(args: {
     args.onNavigateBack,
     args.onPageFault,
     args.onPageReady,
-    args.onRouteDelivered,
     args.onRouteParamClear,
     args.onRouteRefused,
     args.onStorageWrite,
@@ -204,9 +198,6 @@ export function useMobileWebShellBridge(args: {
       onPageReady: () => {
         establishedSessionRef.current = sessionId
         pageReadyRef.current()
-      },
-      onRouteDelivered: (delivered) => {
-        routeDeliveredRef.current(delivered)
       },
       onRouteParamClear: (param, value) => {
         routeParamClearRef.current(param, value)
@@ -257,13 +248,6 @@ export function useMobileWebShellBridge(args: {
     viewRef: useCallback(
       (handle: OrcaMobileWebShellViewHandle | null) => {
         viewRef.current = handle === null || sessionId === null ? null : { sessionId, handle }
-        // A view the host can post on again is the moment a frame it could not send gets another
-        // chance. Nothing else would ask: the page is mounted, so there is no `ready` coming, and
-        // the screen re-renders only when something above it changes.
-        const mounted = hostRef.current
-        if (handle !== null && mounted !== null && mounted.sessionId === sessionId) {
-          mounted.host.retryPendingRoute()
-        }
       },
       [sessionId]
     ),
