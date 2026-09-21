@@ -121,23 +121,21 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
   }
 
   /**
-   * Answered every time it is asked, with the keys read every time it is answered.
-   *
-   * A page that saw a `state` older than the one it holds recovers by asking again rather than by
-   * living with a cache it knows is wrong, and the same is true of its storage: a document that
-   * reloads inside one mount — which the fault path produces — would otherwise be primed from
-   * before its own writes, and `publishPageStorage` clears the page's cache to match.
-   *
-   * Synchronously, because the page refuses every member until `init` lands and the golden
-   * recorder mounts its screen in the same turn it drains one; an `init` that waited on a promise
-   * would change what the first render of every replay sees. The caller keeps the map current.
-   */
-  /**
    * Posts `init` and answers whether the page received it.
    *
+   * Answered every time it is asked, with the keys read every time it is answered. A page that saw
+   * a `state` older than the one it holds recovers by asking again rather than by living with a
+   * cache it knows is wrong, and the same is true of its storage: a document that reloads inside
+   * one mount — which the fault path produces — would otherwise be primed from before its own
+   * writes, and `publishPageStorage` clears the page's cache to match.
+   *
+   * The frame is still built synchronously, because the page refuses every member until `init`
+   * lands and the golden recorder mounts its screen in the same turn it drains one; a frame whose
+   * contents waited on a promise would change what the first render of every replay sees. What is
+   * awaited is only the post, and only by a caller that spends something on delivery.
+   *
    * False for a refused route, which is answered with nothing, and false for a frame the view
-   * would not take. Settled after the post rather than after the handover, because the caller
-   * spends a one-shot route param on this answer.
+   * would not take.
    */
   async function sendInit(): Promise<boolean> {
     const route = routes.current()

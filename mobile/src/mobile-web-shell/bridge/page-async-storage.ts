@@ -119,12 +119,6 @@ function accept(key: string, value: string | null): PageStorageRefusal | null {
 }
 
 /**
- * One refusal: the rejection the composer's catch is written for, or a logged drop.
- *
- * Logged and not silent, because the drop is the thing a reader of a device log has to be able to
- * find — a preference that did not stick looks identical to one nobody set.
- */
-/**
  * The error a refusal is, or nothing. Logged here, because the drop is the thing a reader of a
  * device log has to be able to find — a preference that did not stick looks identical to one
  * nobody set.
