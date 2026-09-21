@@ -27,6 +27,12 @@ type ScreenDependencies = {
   posted: string[]
   /** Whether the view refuses what it is handed, which is a page the post never reached. */
   postFails: boolean
+  /** Whether a post waits for the case to settle it, so a case can render while one is in flight. */
+  holdPosts: boolean
+  /** The settlers for posts the view has taken and not answered. */
+  heldPosts: (() => void)[]
+  /** The handle the view last attached, so a case can make the host lose and regain one. */
+  handle: { postBridgeMessage: (json: string) => Promise<void> } | null
   state: MobileWebShellSessionState
   /** Null for every case but the bridge's: with no client the hook builds no host at all. */
   client: FakeRpcClient | null
@@ -65,6 +71,9 @@ const dependencies = vi.hoisted((): ScreenDependencies => {
     viewRenders: 0,
     posted: [],
     postFails: false,
+    holdPosts: false,
+    heldPosts: [],
+    handle: null,
     state: { kind: 'checking' },
     client: null
   }
@@ -153,14 +162,19 @@ vi.mock('../../modules/orca-mobile-web-shell/src', async () => {
       // post rejected as a view that is gone, so no case could see a frame reach the page.
       const attach = props.ref
       React.useLayoutEffect(() => {
-        attach?.({
+        const handle = {
           postBridgeMessage: (json: string) => {
             dependencies.posted.push(json)
-            return dependencies.postFails
-              ? Promise.reject(new Error('the view would not take it'))
+            if (dependencies.postFails) {
+              return Promise.reject(new Error('the view would not take it'))
+            }
+            return dependencies.holdPosts
+              ? new Promise<void>((settle) => dependencies.heldPosts.push(() => settle()))
               : Promise.resolve()
           }
-        })
+        }
+        dependencies.handle = handle
+        attach?.(handle)
         return () => {
           attach?.(null)
         }
@@ -205,6 +219,7 @@ vi.mock('./use-mobile-web-shell-session', () => ({
 
 import { clientFrame, createFakeRpcClient } from './bridge-host-test-fakes'
 import { BRIDGE_FAULT_GRANT, BRIDGE_NAVIGATE_BACK_NOTIFY } from './bridge/bridge-envelope'
+import { BRIDGE_ROUTE_UPDATE_ACCEPT } from './bridge/bridge-route-update'
 import { MobileWebShellScreen } from './MobileWebShellScreen'
 
 /** The caller's native screen, as a component so `findAllByType` can name it without a host string. */
@@ -300,6 +315,9 @@ beforeEach(() => {
   dependencies.viewRenders = 0
   dependencies.posted.length = 0
   dependencies.postFails = false
+  dependencies.holdPosts = false
+  dependencies.heldPosts.length = 0
+  dependencies.handle = null
   dependencies.client = null
   dependencies.routeGrants = DEFAULT_ROUTE_GRANTS
   dependencies.back.mockReset()
@@ -552,6 +570,158 @@ describe('the hybrid shell screen', () => {
     expect(delivered).toEqual([])
     // The page still asked, which is a different fact from the frame landing.
     expect(dependencies.reportPageReady).toHaveBeenCalled()
+    warned.mockRestore()
+  })
+
+  /**
+   * A route whose frame the view refused is still owed to the page (round 4).
+   *
+   * The screen used to own the attempt: it recorded the route it had tried and cleared that record
+   * on a refusal, so the only thing that could try again was another render. A view that comes
+   * back — the native handle re-attaching under the same mounted page — is not one, so the pane
+   * the user asked for stayed on the shell's side forever. The host owns it now: the route stays
+   * pending until a post resolves true, and a regained handle is one of the moments it retries.
+   */
+  it('delivers a pending route when the host regains a view handle', async () => {
+    dependencies.client = createFakeRpcClient()
+    dependencies.postFails = true
+    const warned = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const delivered: unknown[] = []
+    dependencies.state = readyState('session-one')
+    const rendered: { tree: ReactTestRenderer | null } = { tree: null }
+    await act(async () => {
+      rendered.tree = create(
+        createElement(MobileWebShellScreen, {
+          hostId: 'host-1',
+          route: { pathname: '/h/host-1', params: { paneKey: 'pane-1' } },
+          fallback: createElement(NativeFallback),
+          onRouteDelivered: (route) => delivered.push(route)
+        })
+      )
+    })
+    const tree = rendered.tree
+    if (tree === null) {
+      throw new Error('screen did not render')
+    }
+    mounted.push(tree)
+    const probe = byName(tree, 'ShellViewProbe')[0]
+    await act(async () => {
+      probe?.props.onBridgeMessage({
+        nativeEvent: {
+          json: clientFrame({ type: 'ready', accepts: [BRIDGE_ROUTE_UPDATE_ACCEPT] })
+        }
+      })
+    })
+    expect(delivered).toEqual([])
+    // The same page, a handle it may be posted on again.
+    dependencies.postFails = false
+    const handle = dependencies.handle
+    await act(async () => {
+      probe?.props.ref(null)
+      probe?.props.ref(handle)
+    })
+    expect(delivered).toEqual([{ pathname: '/h/host-1', params: { paneKey: 'pane-1' } }])
+    warned.mockRestore()
+  })
+
+  /**
+   * A render between the frame and its answer does not cancel the delivery (round 4).
+   *
+   * The screen's effect cancelled its own pending answer on cleanup, so any render while a post
+   * was in flight — a state change anywhere above, which is routine — dropped the report the
+   * switch spends to clear the param. The page had the route and the shell never heard.
+   */
+  it('delivers once when the screen re-renders while the frame is in flight', async () => {
+    dependencies.client = createFakeRpcClient()
+    const delivered: { pathname: string; params?: Record<string, string> }[] = []
+    const screen = (params: Record<string, string>) =>
+      createElement(MobileWebShellScreen, {
+        hostId: 'host-1',
+        route: { pathname: '/h/host-1', params },
+        fallback: createElement(NativeFallback),
+        onRouteDelivered: (route) => delivered.push(route)
+      })
+    dependencies.state = readyState('session-one')
+    const rendered: { tree: ReactTestRenderer | null } = { tree: null }
+    await act(async () => {
+      rendered.tree = create(screen({ paneKey: '' }))
+    })
+    const tree = rendered.tree
+    if (tree === null) {
+      throw new Error('screen did not render')
+    }
+    mounted.push(tree)
+    await act(async () => {
+      byName(tree, 'ShellViewProbe')[0]?.props.onBridgeMessage({
+        nativeEvent: {
+          json: clientFrame({ type: 'ready', accepts: [BRIDGE_ROUTE_UPDATE_ACCEPT] })
+        }
+      })
+    })
+    expect(delivered).toHaveLength(1)
+    dependencies.holdPosts = true
+    await act(async () => {
+      tree.update(screen({ paneKey: 'pane-1' }))
+    })
+    expect(dependencies.heldPosts).toHaveLength(1)
+    await act(async () => {
+      tree.update(screen({ paneKey: 'pane-1' }))
+    })
+    // The route did not move, so the render in flight costs no second frame.
+    expect(dependencies.heldPosts).toHaveLength(1)
+    await act(async () => {
+      dependencies.heldPosts[0]?.()
+    })
+    expect(delivered.slice(1)).toEqual([{ pathname: '/h/host-1', params: { paneKey: 'pane-1' } }])
+  })
+
+  /**
+   * The same pane, asked for twice, after the first frame was refused (round 4).
+   *
+   * The host moved its held route on the refused attempt, so the second tap read as a route that
+   * had not moved and was held rather than sent: the page never got the pane and the param was
+   * never spent. Movement is measured against what the page received, so the repeat tap lands.
+   */
+  it('delivers a repeat tap for the pane whose frame never landed', async () => {
+    dependencies.client = createFakeRpcClient()
+    const warned = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const delivered: { pathname: string; params?: Record<string, string> }[] = []
+    const screen = (params: Record<string, string>) =>
+      createElement(MobileWebShellScreen, {
+        hostId: 'host-1',
+        route: { pathname: '/h/host-1', params },
+        fallback: createElement(NativeFallback),
+        onRouteDelivered: (route) => delivered.push(route)
+      })
+    dependencies.state = readyState('session-one')
+    const rendered: { tree: ReactTestRenderer | null } = { tree: null }
+    await act(async () => {
+      rendered.tree = create(screen({ paneKey: '' }))
+    })
+    const tree = rendered.tree
+    if (tree === null) {
+      throw new Error('screen did not render')
+    }
+    mounted.push(tree)
+    await act(async () => {
+      byName(tree, 'ShellViewProbe')[0]?.props.onBridgeMessage({
+        nativeEvent: {
+          json: clientFrame({ type: 'ready', accepts: [BRIDGE_ROUTE_UPDATE_ACCEPT] })
+        }
+      })
+    })
+    expect(delivered).toHaveLength(1)
+    dependencies.postFails = true
+    await act(async () => {
+      tree.update(screen({ paneKey: 'pane-1' }))
+    })
+    expect(delivered).toHaveLength(1)
+    // The tap was never spent, so the next one carries the same pane.
+    dependencies.postFails = false
+    await act(async () => {
+      tree.update(screen({ paneKey: 'pane-1' }))
+    })
+    expect(delivered.slice(1)).toEqual([{ pathname: '/h/host-1', params: { paneKey: 'pane-1' } }])
     warned.mockRestore()
   })
 

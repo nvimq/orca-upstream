@@ -48,11 +48,11 @@ export type MobileWebShellBridgeView = {
   readonly viewRef: (handle: OrcaMobileWebShellViewHandle | null) => void
   readonly onBridgeMessage: (event: MobileWebShellBridgeMessageEvent) => void
   /**
-   * Hands the mounted host a rewritten route for the screen it is already serving, and answers
-   * whether the frame reached the page. False whenever there is no host yet, which the caller has
-   * to know: a param it clears after a publish nobody made is a request the page never heard.
+   * Hands the mounted host a rewritten route for the screen it is already serving. Dropped when
+   * there is no host yet; the route the host is built from carries it instead, and either way the
+   * page is told through `onRouteDelivered` rather than through an answer here.
    */
-  readonly publishRoute: (route: BridgeInitRoute) => Promise<boolean>
+  readonly publishRoute: (route: BridgeInitRoute) => void
 }
 
 /**
@@ -95,7 +95,9 @@ export function useMobileWebShellBridge(args: {
   /** The page could not render the generation on screen. Reported, never recovered from here. */
   onPageFault: (error: BridgeErrorCapture) => void
   /** The page asked for a session. Reported so the screen can stop waiting for it. */
-  onPageReady: (delivered: Promise<boolean>) => void
+  onPageReady: () => void
+  /** A frame carrying that route reached the page, so a one-shot param on it may be spent. */
+  onRouteDelivered: (route: BridgeInitRoute) => void
   /** This shell named a screen the protocol does not allow, so no session is served. */
   onRouteRefused: (issue: string) => void
   /** Every screencast frame this host has dropped, so the shell can show the running total. */
@@ -133,6 +135,7 @@ export function useMobileWebShellBridge(args: {
   const readStorageRef = useRef(args.readStorage)
   const pageFaultRef = useRef(args.onPageFault)
   const pageReadyRef = useRef(args.onPageReady)
+  const routeDeliveredRef = useRef(args.onRouteDelivered)
   const routeRefusedRef = useRef(args.onRouteRefused)
   const binaryFramesDroppedRef = useRef(args.onBinaryFramesDropped)
   // Commit-phase and declared above the host's effect, so the host is built against what this
@@ -151,6 +154,7 @@ export function useMobileWebShellBridge(args: {
     readStorageRef.current = args.readStorage
     pageFaultRef.current = args.onPageFault
     pageReadyRef.current = args.onPageReady
+    routeDeliveredRef.current = args.onRouteDelivered
     routeRefusedRef.current = args.onRouteRefused
     binaryFramesDroppedRef.current = args.onBinaryFramesDropped
   }, [
@@ -162,6 +166,7 @@ export function useMobileWebShellBridge(args: {
     args.onNavigateBack,
     args.onPageFault,
     args.onPageReady,
+    args.onRouteDelivered,
     args.onRouteRefused,
     args.onStorageWrite,
     args.readStorage,
@@ -190,9 +195,12 @@ export function useMobileWebShellBridge(args: {
       onPageFault: (error) => {
         pageFaultRef.current(error)
       },
-      onPageReady: (delivered) => {
+      onPageReady: () => {
         establishedSessionRef.current = sessionId
-        pageReadyRef.current(delivered)
+        pageReadyRef.current()
+      },
+      onRouteDelivered: (delivered) => {
+        routeDeliveredRef.current(delivered)
       },
       onRouteRefused: (issue) => {
         routeRefusedRef.current(issue)
@@ -240,6 +248,13 @@ export function useMobileWebShellBridge(args: {
     viewRef: useCallback(
       (handle: OrcaMobileWebShellViewHandle | null) => {
         viewRef.current = handle === null || sessionId === null ? null : { sessionId, handle }
+        // A view the host can post on again is the moment a frame it could not send gets another
+        // chance. Nothing else would ask: the page is mounted, so there is no `ready` coming, and
+        // the screen re-renders only when something above it changes.
+        const mounted = hostRef.current
+        if (handle !== null && mounted !== null && mounted.sessionId === sessionId) {
+          mounted.host.retryPendingRoute()
+        }
       },
       [sessionId]
     ),
@@ -261,11 +276,11 @@ export function useMobileWebShellBridge(args: {
     // effect is a layout effect, so by the time a passive effect sees the new identity the host
     // behind it exists.
     publishRoute: useCallback(
-      async (route: BridgeInitRoute) => {
+      (route: BridgeInitRoute) => {
         const mounted = hostRef.current
-        return mounted !== null && mounted.sessionId === sessionId
-          ? mounted.host.publishRoute(route)
-          : false
+        if (mounted !== null && mounted.sessionId === sessionId) {
+          mounted.host.publishRoute(route)
+        }
       },
       [buildId, client, sessionId, snapshot]
     )

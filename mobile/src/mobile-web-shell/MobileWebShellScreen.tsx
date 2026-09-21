@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { ActivityIndicator, Linking, Pressable, StyleSheet, Text, View } from 'react-native'
 import { useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -20,7 +20,6 @@ import {
 } from './mobile-web-shell-dev-facts'
 import { cancelledShellNavigationTarget } from './cancelled-navigation-target'
 import { playPageHaptic } from './page-haptics'
-import { shellScreenRouteKey } from './shell-screen-route'
 import { useMobileWebShellBridge } from './use-mobile-web-shell-bridge'
 import type { MobileWebShellRuntime } from './mobile-web-shell-runtime'
 import { useNativeDeviceVerbs } from '../platform/use-native-device-verbs'
@@ -215,17 +214,17 @@ export function MobileWebShellScreen({
     // the map as they are made. This re-seats that map on the store afterwards, for the key whose
     // write never persisted, and it runs on every ask because a document that reloads inside this
     // mount asks again.
-    onPageReady: (delivered) => {
+    onPageReady: () => {
       reportPageReady()
       void refreshStorage()
-      // Awaited, not read: the page asking and the frame answering it landing are two facts, and
-      // the second settles later. A route param spent on the first is spent on a frame a view
-      // that is gone refused.
-      void delivered.then((landed) => {
-        if (landed) {
-          onRouteDelivered?.(route)
-        }
-      })
+    },
+    // Registered once per host rather than per publish: the frame that carries a route may be one
+    // this screen never asked for — the `init` answering a reload, or a retry of one the view
+    // refused — and a render between the ask and the answer must not lose the report. The page
+    // asking and a frame reaching it are two facts, and a param spent on the first is spent on a
+    // frame a view that was gone refused.
+    onRouteDelivered: (delivered) => {
+      onRouteDelivered?.(delivered)
     },
     // `document-load-failed` because that is what happens: the document loads and the page refuses
     // the session, so no tree is ever built. The refetch it costs is wasted on a route this shell
@@ -262,40 +261,16 @@ export function MobileWebShellScreen({
     onBinaryFramesDropped: reportDroppedBinaryFrames
   })
 
-  // A route that moved under a screen that stayed mounted, which the key is what decides: the
-  // session switch keeps `paneKey` out of its key so a notification tap for another pane is a tab
-  // switch rather than a page reload, and this is how the page hears about it. Keyed on the page's
-  // own identity for a route, so a re-render holding an equal route publishes nothing.
-  const attemptedRouteKey = useRef<string | null>(shellScreenRouteKey(route))
+  // A route that moved under a screen that stayed mounted: the session switch keeps `paneKey` out
+  // of its key so a notification tap for another pane is a tab switch rather than a page reload,
+  // and this is how the page hears about it. Nothing is tracked here — which route the page has,
+  // and which one is still owed it, belong to the host, which outlives any one run of this effect.
+  // All this says is what the screen is on now: a route that did not move is dropped there, and a
+  // frame in flight when this re-runs is not disturbed by it.
   const publishRoute = bridge.publishRoute
   useEffect(() => {
-    const key = shellScreenRouteKey(route)
-    if (key === attemptedRouteKey.current) {
-      return
-    }
-    // Recorded only once a frame has gone out. A publish the hook refuses — no host yet, which is
-    // the gap between a ready session and its mounted bridge — leaves the key unrecorded, so the
-    // render that brings the host publishes the route the page never received. `publishRoute`'s
-    // identity changes with the inputs the host is built from, which is what re-runs this.
-    // Attempted now, recorded only once the frame has reached the page. A publish that was
-    // refused — no host yet, or a view that would not take it — leaves nothing recorded, so the
-    // next render that can carry it tries again.
-    attemptedRouteKey.current = key
-    let live = true
-    void publishRoute(route).then((landed) => {
-      if (!live) {
-        return
-      }
-      if (!landed) {
-        attemptedRouteKey.current = null
-        return
-      }
-      onRouteDelivered?.(route)
-    })
-    return () => {
-      live = false
-    }
-  }, [onRouteDelivered, publishRoute, route])
+    publishRoute(route)
+  }, [publishRoute, route])
 
   // A profile read that rejected never becomes a host, so the session would otherwise sit in
   // `ready` behind an un-hidden view with nothing serving it and the page asking forever.

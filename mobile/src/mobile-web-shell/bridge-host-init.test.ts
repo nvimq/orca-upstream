@@ -146,7 +146,7 @@ describe('init and state', () => {
     }
   })
 
-  it('tells the ready handler that no init reached the page for a refused route', async () => {
+  it('reports no delivery for a refused route, so its param is not spent', async () => {
     // The screen clears a one-shot param when the page has been handed the route (ruling 33.1),
     // and a refused route answers the `ready` without sending anything: the caller would spend a
     // notification tap the page never received. Unreachable from the session switch, which parses
@@ -156,10 +156,10 @@ describe('init and state', () => {
     await Promise.resolve()
     expect(bridge.posted).toEqual([])
     expect(bridge.pageReadyCount()).toBe(1)
-    expect(bridge.pageReadySentInit()).toEqual([false])
+    expect(bridge.routeDeliveries()).toEqual([])
   })
 
-  it('tells it an init did reach the page for a route the protocol allows', async () => {
+  it('reports the delivery once an init reached the page', async () => {
     const bridge = harness({ route: { pathname: '/h/host-a' } })
     bridge.host.receive(clientFrame({ type: 'ready' }))
     // Settled after the post, which is the whole point: readiness is the ask, this is the landing.
@@ -167,10 +167,10 @@ describe('init and state', () => {
       await Promise.resolve()
     }
     expect(bridge.posted).toHaveLength(1)
-    expect(bridge.pageReadySentInit()).toEqual([true])
+    expect(bridge.routeDeliveries()).toEqual([{ pathname: '/h/host-a' }])
   })
 
-  it('tells it nothing reached the page when the view refuses the frame', async () => {
+  it('reports no delivery when the view refuses the frame', async () => {
     const bridge = harness({
       route: { pathname: '/h/host-a' },
       post: () => Promise.reject(new Error('the view is gone'))
@@ -179,7 +179,7 @@ describe('init and state', () => {
     for (let turn = 0; turn < 4; turn += 1) {
       await Promise.resolve()
     }
-    expect(bridge.pageReadySentInit()).toEqual([false])
+    expect(bridge.routeDeliveries()).toEqual([])
     expect(bridge.diagnostics.map((diagnostic) => diagnostic.kind)).toContain('post-failed')
   })
 

@@ -47,7 +47,8 @@ export type Harness = {
   pageReadyCount: () => number
   /** One entry per `ready` answered, saying whether its `init` reached the page. Filled as each
    *  post settles, so a case reads it after awaiting the turn the post resolves on. */
-  pageReadySentInit: () => readonly boolean[]
+  /** Every route a frame actually reached the page with, in the order they landed. */
+  routeDeliveries: () => readonly BridgeInitRoute[]
   routeRefusals: string[]
   pageFaults: BridgeErrorCapture[]
   frames: () => BridgeHostMessage[]
@@ -105,7 +106,7 @@ export function harness(
   const storageWrites: { key: string; value: string | null }[] = []
   let pageReadies = 0
   /** One entry per `ready` answered, saying whether an `init` actually went out for it. */
-  const pageReadySentInit: boolean[] = []
+  const routeDeliveries: BridgeInitRoute[] = []
   const routeRefusals: string[] = []
   const pageFaults: BridgeErrorCapture[] = []
   const droppedBinaryFrames: number[] = []
@@ -126,10 +127,10 @@ export function harness(
     readStorage:
       options.readStorage ?? (() => ({ storage: options.storage ?? {}, storageOversize: [] })),
     onStorageWrite: (key, value) => storageWrites.push({ key, value }),
-    onPageReady: (delivered: Promise<boolean>) => {
+    onPageReady: () => {
       pageReadies += 1
-      void delivered.then((landed) => pageReadySentInit.push(landed))
     },
+    onRouteDelivered: (route) => routeDeliveries.push(route),
     onRouteRefused: (issue) => routeRefusals.push(issue),
     onNavigate: options.onNavigate ?? ((href) => navigations.push(href)),
     onExternalLink: (url) => externalLinks.push(url),
@@ -185,7 +186,7 @@ export function harness(
     backPops,
     storageWrites,
     pageReadyCount: () => pageReadies,
-    pageReadySentInit: () => pageReadySentInit,
+    routeDeliveries: () => routeDeliveries,
     routeRefusals,
     pageFaults,
     frames,

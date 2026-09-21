@@ -180,7 +180,14 @@ export type BridgeHostOptions = {
    */
   /** The page asked for a session. `delivered` settles true once the `init` answering that ask
    *  reached the page, which is a later and different fact from the ask itself. */
-  onPageReady: (delivered: Promise<boolean>) => void
+  onPageReady: () => void
+  /**
+   * A frame carrying that route reached the page. Once per route, from whichever frame carried it —
+   * the first `init`, a re-sent one, or a retry of a frame the view had refused — so the caller may
+   * spend a one-shot param on it. Registered once per host, because a delivery outlives the render
+   * that asked for it.
+   */
+  onRouteDelivered: (route: BridgeInitRoute) => void
   /**
    * The route this shell was built with is not one the protocol allows, so no honest `init` can be
    * sent and the page will never mount. Loud on purpose: the page's own refusal is a `console.warn`

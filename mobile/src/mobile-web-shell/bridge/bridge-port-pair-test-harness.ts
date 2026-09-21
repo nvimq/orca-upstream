@@ -237,6 +237,7 @@ export function createBridgePortPair<TRpc extends RpcClient>(
     onPageReady: () => {
       pageReadies += 1
     },
+    onRouteDelivered: () => {},
     onRouteRefused: (issue) => routeRefusals.push(issue),
     onDiagnostic: (diagnostic) => hostDiagnostics.push(diagnostic)
   })
