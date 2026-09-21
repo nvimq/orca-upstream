@@ -84,33 +84,27 @@ describe('a write the page makes', () => {
     await expect(pageAsyncStorage.getItem('orca:pins:host-1')).resolves.toBeNull()
   })
 
-  it('is refused, and not kept, for a key outside the allowlist', async () => {
+  it('is dropped, and not kept, for a key outside the allowlist', async () => {
     // Held locally it would answer a later read with a value no other screen in the app can see —
-    // a pin that looks set and is not, which is the failure the grant exists to avoid.
-    const refusal = await refusalOf(pageAsyncStorage.setItem('orca:mobileWebShellEnabled', 'true'))
-    expect(refusal.refusal).toBe('not-allowed')
+    // a pin that looks set and is not, which is the failure the grant exists to avoid. Dropped
+    // rather than rejected: ruling 33.4, and the case at the end of this file says why.
+    await expect(
+      pageAsyncStorage.setItem('orca:mobileWebShellEnabled', 'true')
+    ).resolves.toBeUndefined()
     expect(writes).toEqual([])
     await expect(pageAsyncStorage.getItem('orca:mobileWebShellEnabled')).resolves.toBeNull()
   })
 
-  it('is refused, and not kept, when the shell granted no storage', async () => {
-    granted = false
-    const refusal = await refusalOf(pageAsyncStorage.setItem('orca:pins:host-1', '["wt-1"]'))
-    expect(refusal.refusal).toBe('not-delivered')
-    await expect(pageAsyncStorage.getItem('orca:pins:host-1')).resolves.toBeNull()
-  })
-
-  it('carries each pair of a multi-write separately, and refuses the ones outside the list', async () => {
-    const refusal = await refusalOf(
+  it('carries each pair of a multi-write separately, and drops the ones outside the list', async () => {
+    await expect(
       pageAsyncStorage.multiSet([
         ['orca:pins:host-1', '["wt-1"]'],
         ['orca:remotePushHostRegistrations', '{}']
       ])
-    )
-    // The pair it could apply is applied before the batch rejects: a caller retrying the whole
-    // batch after a refusal must not find the good half missing as well.
+    ).resolves.toBeUndefined()
+    // The pair it could apply is applied: a batch that dropped the good half as well would lose a
+    // write nothing was wrong with.
     expect(writes).toEqual([{ key: 'orca:pins:host-1', value: '["wt-1"]' }])
-    expect(refusal.key).toBe('orca:remotePushHostRegistrations')
   })
 
   it('never empties the app store, which is not this document to empty', async () => {
@@ -122,24 +116,24 @@ describe('a write the page makes', () => {
 })
 
 describe('what the page will not keep', () => {
-  it("refuses another host's pinned list, so a later read cannot answer with it", async () => {
+  it("drops another host's pinned list, so a later read cannot answer with it", async () => {
     publish({ 'orca:pins:host-1': '["mine"]' })
-    const refusal = await refusalOf(pageAsyncStorage.setItem('orca:pins:host-2', '["theirs"]'))
+    await expect(
+      pageAsyncStorage.setItem('orca:pins:host-2', '["theirs"]')
+    ).resolves.toBeUndefined()
     // Nothing posted, and nothing cached: a value held here that the shell will not write is a pin
     // that looks set to this document and to nothing else in the app.
-    expect(refusal.refusal).toBe('not-allowed')
     expect(writes).toEqual([])
     expect(await pageAsyncStorage.getItem('orca:pins:host-2')).toBeNull()
   })
 
-  it("refuses another workspace's chat tabs on the session route it was not opened for", async () => {
+  it("drops another workspace's chat tabs on the session route it was not opened for", async () => {
     publish()
-    const refusal = await refusalOf(
+    await expect(
       pageAsyncStorage.setItem('orca:nativeChatTabs:host-1:wt-2', '{}')
-    )
-    expect(refusal.refusal).toBe('not-allowed')
+    ).resolves.toBeUndefined()
     expect(writes).toEqual([])
-    // And the one it was opened for goes through, so the refusal above is about the workspace.
+    // And the one it was opened for goes through, so the drop above is about the workspace.
     await pageAsyncStorage.setItem('orca:nativeChatTabs:host-1:wt-1', '{}')
     expect(writes).toEqual([{ key: 'orca:nativeChatTabs:host-1:wt-1', value: '{}' }])
   })
@@ -167,10 +161,29 @@ describe('what the page will not keep', () => {
     expect(await pageAsyncStorage.getItem('orca:last-visited-worktree')).toBe(atBound)
   })
 
-  it('refuses a removal it may not make, rather than resolving over it', async () => {
+  it('drops a write it may not make rather than rejecting, because nobody catches one', async () => {
+    // Ruling 33.4. Every page-closure writer of an unlisted key calls `setItem` with no catch —
+    // `notification-delivery-preferences.ts:39` awaits it inside a function its callers `void` —
+    // so rejecting here turns a dropped preference into an unhandled rejection in the page. The
+    // drop is the old behaviour and the right one; only the journal's oversize path rejects,
+    // because the composer is written to catch that one.
     publish()
-    const refusal = await refusalOf(pageAsyncStorage.removeItem('orca:pins:host-2'))
-    expect(refusal.refusal).toBe('not-allowed')
+    await expect(
+      pageAsyncStorage.setItem('orca:notificationDeliveryPreferences', '{}')
+    ).resolves.toBeUndefined()
     expect(writes).toEqual([])
+    expect(await pageAsyncStorage.getItem('orca:notificationDeliveryPreferences')).toBeNull()
+  })
+
+  it('drops a removal it may not make, for the same reason', async () => {
+    publish()
+    await expect(pageAsyncStorage.removeItem('orca:pins:host-2')).resolves.toBeUndefined()
+    expect(writes).toEqual([])
+  })
+
+  it('drops a write the shell would not take, rather than rejecting', async () => {
+    granted = false
+    await expect(pageAsyncStorage.setItem('orca:pins:host-1', '["wt-1"]')).resolves.toBeUndefined()
+    await expect(pageAsyncStorage.getItem('orca:pins:host-1')).resolves.toBeNull()
   })
 })

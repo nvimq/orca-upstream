@@ -27,12 +27,19 @@ const REFUSAL_SENTENCES: Record<PageStorageRefusal, string> = {
 /**
  * A write the page could not make, as something a screen can put on itself.
  *
- * The real AsyncStorage rejects when its store refuses — a value over the row limit is a SQLite
- * error on Android — so rejecting is the module's own contract rather than a shape invented here,
- * and every caller that already catches a save gets the refusal for free. The one that matters is
- * the durable send journal: `mobile-structured-agent-session-send.ts` catches it and answers
- * "Message not sent" instead of sending a mutation whose operation id was never written down
- * (rulings-ota-c7.md ruling 7).
+ * Raised for one refusal only, `too-large`, and that scope is the whole of ruling 33.4. The real
+ * AsyncStorage rejects when its store refuses — a value over the row limit is a SQLite error on
+ * Android — so rejecting is the module's own contract for a value too big, and the caller that
+ * needs it is written for it: the durable send journal, whose composer catches this and answers
+ * "Message not sent" rather than sending a mutation whose operation id was never written down
+ * (ruling 7).
+ *
+ * The other two refusals stay silent drops, because nothing catches them. A page-closure writer of
+ * an unlisted key calls `setItem` and awaits it with no catch —
+ * `notification-delivery-preferences.ts:39` is the plain case, and `preferences.ts` has several —
+ * so rejecting there converts a preference the page was never allowed to keep into an unhandled
+ * rejection in the document. A write nobody may make and a write the shell would not take are both
+ * the page failing to change anything, which is what it already does; the log is where they go.
  */
 export class PageStorageRefusedError extends Error {
   readonly refusal: PageStorageRefusal
@@ -96,17 +103,34 @@ function accept(key: string, value: string | null): PageStorageRefusal | null {
   return null
 }
 
-/** One refusal, as the rejection the caller's own catch is written for. */
+/**
+ * One refusal: the rejection the composer's catch is written for, or a logged drop.
+ *
+ * Logged and not silent, because the drop is the thing a reader of a device log has to be able to
+ * find — a preference that did not stick looks identical to one nobody set.
+ */
 function settle(key: string, refusal: PageStorageRefusal | null): Promise<void> {
-  return refusal === null
-    ? Promise.resolve()
-    : Promise.reject(new PageStorageRefusedError(key, refusal))
+  if (refusal === null) {
+    return Promise.resolve()
+  }
+  if (refusal === 'too-large') {
+    return Promise.reject(new PageStorageRefusedError(key, refusal))
+  }
+  console.warn('[page-bridge] storage-write-dropped', { key, refusal })
+  return Promise.resolve()
 }
 
-/** The first refusal of a batch, after every pair that could be applied has been. */
+/** The first refusal of a batch, after every pair that could be applied has been. Every dropped
+ *  pair is logged by `settle`; only an oversize one can reject, and it does so after the rest. */
 function settleBatch(refusals: { key: string; refusal: PageStorageRefusal }[]): Promise<void> {
-  const first = refusals[0]
-  return first === undefined ? Promise.resolve() : settle(first.key, first.refusal)
+  let rejection: Promise<void> | null = null
+  for (const entry of refusals) {
+    const settled = settle(entry.key, entry.refusal)
+    if (entry.refusal === 'too-large' && rejection === null) {
+      rejection = settled
+    }
+  }
+  return rejection ?? Promise.resolve()
 }
 
 const pageAsyncStorage = {
