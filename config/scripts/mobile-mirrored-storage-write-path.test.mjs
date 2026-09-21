@@ -11,7 +11,7 @@
  * module that owns a mirrored key, so deleting its write path reds that row by name, and every
  * failure quotes the line it found.
  */
-import { readFileSync } from 'node:fs'
+import { globSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
@@ -31,8 +31,27 @@ const MIRRORED_WRITERS = [
     keys: ['TERMINAL_ACCESSORY_LAYOUT_STORAGE_KEY']
   },
   { file: 'src/components/CustomKeyModal.tsx', keys: ['CUSTOM_ACCESSORY_KEYS_STORAGE_KEY'] },
-  { file: 'src/session/mobile-structured-send-operation-journal.ts', keys: ['STORAGE_KEY'] }
+  { file: 'src/session/mobile-structured-send-operation-journal.ts', keys: ['STORAGE_KEY'] },
+  {
+    file: 'src/worktree/last-visited-worktree-repo.ts',
+    keys: ['LAST_VISITED_WORKTREE_STORAGE_KEY']
+  }
 ]
+
+/**
+ * The one caller of the note-then-persist path, which is the shell taking a value the page has
+ * already applied into a store that refuses nothing.
+ *
+ * Counted rather than described: the module says the census holds it to one caller, and until
+ * this row nothing did. A second caller is either a writer that wants the ordering without the
+ * store that earns it, or a page-reachable module that would note a refusal as an accepted write.
+ */
+const NOTE_FIRST_CALLER = 'src/mobile-web-shell/use-page-host-snapshot.ts'
+
+/** Every module under `mobile/src`, so a new caller cannot arrive in a file no row names. */
+function mobileSources() {
+  return globSync('src/**/*.{ts,tsx}', { cwd: mobileDir }).sort()
+}
 
 /** The line a match sits on, so a failure names what it found rather than only that it found one. */
 function linesMatching(source, pattern) {
@@ -53,6 +72,16 @@ describe('the mirrored storage write path', () => {
     // map is not exported, so this is what says so.
     expect(linesMatching(owner, /^export (const|let) mirror\b/)).toEqual([])
     expect(linesMatching(owner, /^export function note\b/)).toEqual([])
+  })
+
+  it(`calls the note-first path from ${NOTE_FIRST_CALLER} and nowhere else`, () => {
+    const callers = mobileSources().filter((file) => {
+      if (file === MIRROR_MODULE) {
+        return false
+      }
+      return linesMatching(read(file), /\bwriteMirroredStorage\(/).length > 0
+    })
+    expect(callers).toEqual([NOTE_FIRST_CALLER])
   })
 
   for (const row of MIRRORED_WRITERS) {
