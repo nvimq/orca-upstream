@@ -12,7 +12,7 @@ import {
   type TerminalShortcutSpecialKey
 } from '../terminal/terminal-accessory-keys'
 import { customKeyModalStyles as styles } from './CustomKeyModal.styles'
-import { noteMirroredWrite, readMirroredStorage } from '../storage/mirrored-storage-keys'
+import { persistMirrored } from '../storage/mirrored-storage-keys'
 
 const CUSTOM_ACCESSORY_KEYS_STORAGE_KEY = 'orca:custom-accessory-keys'
 
@@ -76,22 +76,10 @@ export async function loadCustomKeys(): Promise<CustomKey[]> {
 }
 
 export async function saveCustomKeys(keys: CustomKey[]): Promise<void> {
-  const value = JSON.stringify(keys)
-  // Noted before it is persisted: the hybrid shell hands this key to the page on every `init`,
-  // built synchronously, so a write that only reached the store would be one `init` behind.
-  const held = readMirroredStorage([CUSTOM_ACCESSORY_KEYS_STORAGE_KEY])[
-    CUSTOM_ACCESSORY_KEYS_STORAGE_KEY
-  ]
-  noteMirroredWrite(CUSTOM_ACCESSORY_KEYS_STORAGE_KEY, value)
-  try {
-    await AsyncStorage.setItem(CUSTOM_ACCESSORY_KEYS_STORAGE_KEY, value)
-  } catch (error) {
-    // Rolled back, because the note is what the next `init` reads: on the page a write over the
-    // cap rejects rather than dropping, and a note left standing would hand the page — and every
-    // native reader answered from this map — the value the store refused.
-    noteMirroredWrite(CUSTOM_ACCESSORY_KEYS_STORAGE_KEY, held ?? null)
-    throw error
-  }
+  // Through the one write path, which notes the mirror on an accepted write and on nothing else
+  // (ruling 35). There is no rollback here any more because there is nothing to undo: on the page
+  // a value over the cap rejects, and a rejected write never reached the map.
+  await persistMirrored(CUSTOM_ACCESSORY_KEYS_STORAGE_KEY, JSON.stringify(keys))
 }
 
 export function CustomKeyModal({ visible, onClose, onKeysChanged, onManageShortcuts }: Props) {

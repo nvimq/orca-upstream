@@ -37,7 +37,10 @@ vi.mock('@react-native-async-storage/async-storage', () => ({
     removeItem: async (key: string) => {
       doubles.writes.push({ key, value: null })
       doubles.store.delete(key)
-    }
+    },
+    // Read back by the mirror after every write it makes, which is how the note follows what the
+    // store took rather than what it was handed (ruling 35).
+    getItem: async (key: string) => doubles.store.get(key) ?? null
   }
 }))
 vi.mock('../transport/host-store', () => ({

@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
-import { noteMirroredWrite } from '../storage/mirrored-storage-keys'
+import { persistMirrored } from '../storage/mirrored-storage-keys'
 
 import { TERMINAL_ACCESSORY_KEYS, type TerminalAccessoryKey } from './terminal-accessory-keys'
 
@@ -228,8 +228,7 @@ export async function loadTerminalAccessoryLayout(): Promise<TerminalAccessoryLa
 export async function saveTerminalAccessoryLayout(layout: TerminalAccessoryLayout): Promise<void> {
   const preference = createTerminalAccessoryLayoutPreference(layout)
   const value = JSON.stringify(preference)
-  // Noted before it is persisted: the hybrid shell hands this key to the page on every `init`,
-  // built synchronously, so a write that only reached the store would be one `init` behind.
-  noteMirroredWrite(TERMINAL_ACCESSORY_LAYOUT_STORAGE_KEY, value)
-  await AsyncStorage.setItem(TERMINAL_ACCESSORY_LAYOUT_STORAGE_KEY, value)
+  // Through the one write path: the hybrid shell hands this key to the page on every `init`,
+  // built synchronously, and what it reads is noted there on an accepted write (ruling 35).
+  await persistMirrored(TERMINAL_ACCESSORY_LAYOUT_STORAGE_KEY, value)
 }

@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { z } from 'zod'
-import { noteMirroredWrite, readMirroredStorage } from '../storage/mirrored-storage-keys'
+import { persistMirrored } from '../storage/mirrored-storage-keys'
 import type { AgentJournalSubmission } from '../../../src/shared/agent-session-journal-types'
 import {
   AGENT_SESSION_MAX_NEW_OPERATION_AGE_MS,
@@ -87,21 +87,10 @@ function parseJournal(raw: string | null): OperationJournal {
 }
 
 async function writeEntries(entries: OperationEntry[]): Promise<void> {
-  const value = entries.length === 0 ? null : JSON.stringify({ v: 1, entries })
-  // Noted before it is persisted: the hybrid shell hands this key to the page on every `init`,
-  // built synchronously, so a write that only reached the store would be one `init` behind. Put
-  // back when the store refuses it, because the other direction is worse — a page told about a
-  // journal the device never wrote resumes operations nothing is holding.
-  const held = readMirroredStorage([STORAGE_KEY])[STORAGE_KEY] ?? null
-  noteMirroredWrite(STORAGE_KEY, value)
-  try {
-    await (value === null
-      ? AsyncStorage.removeItem(STORAGE_KEY)
-      : AsyncStorage.setItem(STORAGE_KEY, value))
-  } catch (error) {
-    noteMirroredWrite(STORAGE_KEY, held)
-    throw error
-  }
+  // Through the one write path, which notes the mirror on an accepted write and on nothing else
+  // (ruling 35). The rejection this can raise is the point of the key: a journal the device never
+  // wrote must not reach the page, and the composer above catches it as "Message not sent".
+  await persistMirrored(STORAGE_KEY, entries.length === 0 ? null : JSON.stringify({ v: 1, entries }))
 }
 
 async function serialize<T>(action: () => Promise<T>): Promise<T> {
