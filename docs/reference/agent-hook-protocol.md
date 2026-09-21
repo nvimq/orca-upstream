@@ -18,8 +18,9 @@ Protocol version: `1` (`ORCA_HOOK_PROTOCOL_VERSION`).
 - HTTP server bound to `127.0.0.1` on an OS-assigned port (`listen(0, '127.0.0.1')`).
 - Only `POST` is handled. Any other method gets `404`.
 - Authentication: the `x-orca-agent-hook-token` request header must equal the server token, otherwise `403`. The check runs before the body is read.
-- A stalled request is destroyed after `HOOK_REQUEST_SLOWLORIS_MS` (5 s).
-- Body limit `HOOK_REQUEST_MAX_BYTES` (1,000,000 bytes). JSON structure limits: 128 × 1024 structural tokens, nesting depth 64. One leading UTF-8 BOM is stripped before parsing.
+- A stalled request is destroyed after `HOOK_REQUEST_SLOWLORIS_MS` (5 s). The client sees a dropped connection, not an HTTP status.
+- Body limit `HOOK_REQUEST_MAX_BYTES` (1,000,000 bytes); a larger body makes the server destroy the connection (no HTTP status). JSON structure limits: 128 × 1024 structural tokens, nesting depth 64. One leading UTF-8 BOM is stripped before parsing.
+- Body encoding follows `Content-Type` (`readRequestBody`): `application/json` is parsed as JSON (an empty body is `{}`), `application/x-www-form-urlencoded` is parsed as a flat map of string fields, and any other or missing type falls back to JSON.
 
 ## Order of checks and status codes
 
@@ -30,7 +31,7 @@ Protocol version: `1` (`ORCA_HOOK_PROTOCOL_VERSION`).
 5. Path is not a known hook route → `404`.
 6. The event is merged with metadata headers, normalized and applied, then `204`.
 
-Once the token has passed, any error while reading or parsing the body (malformed JSON, oversized body, truncated request) still ends in `204`. This is intentional: a broken hook must never block the agent. Because the route is resolved after the body is read, an unknown path only gets `404` if its body was read successfully.
+Once the token has passed, an error that leaves the connection usable — for example malformed JSON or a body over the JSON structure limits — still ends in `204`. This is intentional: a broken hook must never block the agent. Errors that destroy the connection (slowloris timeout, body over the byte cap, a request cut short) produce no HTTP response at all; the client sees a closed connection, so hook scripts should treat a connection error like a failed post rather than expect a `204`. Because the route is resolved after the body is read, an unknown path only gets `404` if its body was read successfully.
 
 ## Routes
 
