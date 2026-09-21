@@ -178,8 +178,6 @@ export type BridgeHostOptions = {
    * the same reason as the fault: the shell bounds the wait for it, and a host built without this
    * would leave a document that never spoke looking exactly like one still starting up.
    */
-  /** The page asked for a session. `delivered` settles true once the `init` answering that ask
-   *  reached the page, which is a later and different fact from the ask itself. */
   onPageReady: () => void
   /**
    * A frame carrying that route reached the page. Once per route, from whichever frame carried it —
