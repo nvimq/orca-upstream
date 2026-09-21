@@ -45,7 +45,8 @@ export type Harness = {
   backPops: BridgeNavigateBackOutcome[]
   storageWrites: { key: string; value: string | null }[]
   pageReadyCount: () => number
-  /** One entry per `ready` answered, saying whether an `init` actually went out for it. */
+  /** One entry per `ready` answered, saying whether its `init` reached the page. Filled as each
+   *  post settles, so a case reads it after awaiting the turn the post resolves on. */
   pageReadySentInit: () => readonly boolean[]
   routeRefusals: string[]
   pageFaults: BridgeErrorCapture[]
@@ -125,9 +126,9 @@ export function harness(
     readStorage:
       options.readStorage ?? (() => ({ storage: options.storage ?? {}, storageOversize: [] })),
     onStorageWrite: (key, value) => storageWrites.push({ key, value }),
-    onPageReady: (sentInit: boolean) => {
+    onPageReady: (delivered: Promise<boolean>) => {
       pageReadies += 1
-      pageReadySentInit.push(sentInit)
+      void delivered.then((landed) => pageReadySentInit.push(landed))
     },
     onRouteRefused: (issue) => routeRefusals.push(issue),
     onNavigate: options.onNavigate ?? ((href) => navigations.push(href)),

@@ -178,7 +178,9 @@ export type BridgeHostOptions = {
    * the same reason as the fault: the shell bounds the wait for it, and a host built without this
    * would leave a document that never spoke looking exactly like one still starting up.
    */
-  onPageReady: (sentInit: boolean) => void
+  /** The page asked for a session. `delivered` settles true once the `init` answering that ask
+   *  reached the page, which is a later and different fact from the ask itself. */
+  onPageReady: (delivered: Promise<boolean>) => void
   /**
    * The route this shell was built with is not one the protocol allows, so no honest `init` can be
    * sent and the page will never mount. Loud on purpose: the page's own refusal is a `console.warn`

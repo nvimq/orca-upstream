@@ -146,23 +146,41 @@ describe('init and state', () => {
     }
   })
 
-  it('tells the ready handler that no init went out for a refused route', () => {
+  it('tells the ready handler that no init reached the page for a refused route', async () => {
     // The screen clears a one-shot param when the page has been handed the route (ruling 33.1),
     // and a refused route answers the `ready` without sending anything: the caller would spend a
     // notification tap the page never received. Unreachable from the session switch, which parses
     // the route before it mounts the shell, and the prop's contract says so anyway.
     const bridge = harness({ route: { pathname: '/h/a b' } })
     bridge.host.receive(clientFrame({ type: 'ready' }))
+    await Promise.resolve()
     expect(bridge.posted).toEqual([])
     expect(bridge.pageReadyCount()).toBe(1)
     expect(bridge.pageReadySentInit()).toEqual([false])
   })
 
-  it('tells it an init did go out for a route the protocol allows', () => {
+  it('tells it an init did reach the page for a route the protocol allows', async () => {
     const bridge = harness({ route: { pathname: '/h/host-a' } })
     bridge.host.receive(clientFrame({ type: 'ready' }))
+    // Settled after the post, which is the whole point: readiness is the ask, this is the landing.
+    for (let turn = 0; turn < 4; turn += 1) {
+      await Promise.resolve()
+    }
     expect(bridge.posted).toHaveLength(1)
     expect(bridge.pageReadySentInit()).toEqual([true])
+  })
+
+  it('tells it nothing reached the page when the view refuses the frame', async () => {
+    const bridge = harness({
+      route: { pathname: '/h/host-a' },
+      post: () => Promise.reject(new Error('the view is gone'))
+    })
+    bridge.host.receive(clientFrame({ type: 'ready' }))
+    for (let turn = 0; turn < 4; turn += 1) {
+      await Promise.resolve()
+    }
+    expect(bridge.pageReadySentInit()).toEqual([false])
+    expect(bridge.diagnostics.map((diagnostic) => diagnostic.kind)).toContain('post-failed')
   })
 
   it('opens a session for the routes a screen actually produces', () => {

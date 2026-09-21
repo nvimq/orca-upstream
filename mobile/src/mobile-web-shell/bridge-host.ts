@@ -13,16 +13,15 @@ import {
   readBridgeClientMessage,
   type BridgeClientMessage,
   type BridgeConnectionSnapshot,
-  type BridgeHostMessage,
   type BridgeInitRoute
 } from './bridge/bridge-envelope'
 import { BridgePageRouteGrantsSchema } from './bridge/bridge-page-route-grants'
-import { captureBridgeError } from './bridge/bridge-error-capture'
 import { createBridgeInitFrame } from './bridge/bridge-init-frame'
 import { BRIDGE_HAPTICS_NOTIFY } from './bridge/bridge-haptics-notify'
 import { bridgeNotifyRefusal } from './bridge/bridge-notify-grants'
 import { splitBridgeReply } from './bridge/bridge-reply-chunking'
 import { pageMayWriteStorageKey } from './page-storage-keys'
+import { createBridgeHostFrames } from './bridge-host-frames'
 import { createBridgeHostRoute } from './bridge-host-route'
 import type { BridgeHostOptions } from './bridge-host-contract'
 
@@ -41,10 +40,10 @@ export type BridgeHost = {
    * page too old to name it reads a second `init` as a replacement. A different pathname is a
    * different screen and is refused here — that is a remount, which is what the shell already does.
    *
-   * True only when a frame went out, because the caller's next move is to clear the param it just
-   * delivered: clearing one the page was never handed would spend the tap on nothing.
+   * True only once the frame reached the page, because the caller's next move is to clear the
+   * param it just delivered: clearing one the page never received would spend the tap on nothing.
    */
-  publishRoute: (next: BridgeInitRoute) => boolean
+  publishRoute: (next: BridgeInitRoute) => Promise<boolean>
   dispose: () => void
 }
 
@@ -88,47 +87,14 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
   // Seeded from the session rather than started false: this host may be a rebuild taking over a
   // session that handshook with the one before it.
   let initSent = options.sessionEstablished
-  let postFailureReported = false
   let notifyFailureReported = false
 
-  // Once per session: a page that cannot be posted to fails every frame after the first, and a
-  // line per frame buries the one that says why.
-  function reportPostFailure(error: unknown): void {
-    if (postFailureReported) {
-      return
-    }
-    postFailureReported = true
-    options.onDiagnostic?.({ kind: 'post-failed', error })
-  }
-
-  function sendJson(json: string): void {
-    // Defensive: teardown already settles everything that could post; this fences callers added later.
-    if (closed) {
-      return
-    }
-    // Between documents the view still exists and still accepts posts, which is exactly why this is
-    // checked: a `state` frame sent now lands in the next document before it has said `ready`.
-    if (!serving) {
-      return
-    }
-    // A `post` that throws where it should reject would escape into the client's own state-change
-    // fan-out, which is what sends the `state` frame, and take the other listeners down with it.
-    try {
-      void options.post(json).catch(reportPostFailure)
-    } catch (error) {
-      reportPostFailure(error)
-    }
-  }
-
-  // Every value in a host frame has already been serialized by whoever produced it — a reply by
-  // `splitBridgeReply`, an error `code` by the capture's round trip — so this cannot throw.
-  function send(frame: BridgeHostMessage): void {
-    sendJson(JSON.stringify(frame))
-  }
-
-  function sendError(id: string, error: unknown): void {
-    send({ v: BRIDGE_PROTOCOL_VERSION, type: 'error', id, error: captureBridgeError(error) })
-  }
+  const frames = createBridgeHostFrames({
+    post: options.post,
+    isOpen: () => !closed && serving,
+    onDiagnostic: options.onDiagnostic
+  })
+  const { postJson, sendJson, send, sendError } = frames
 
   const subscriptions = new BridgeHostSubscriptions({
     client,
@@ -166,28 +132,36 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
    * recorder mounts its screen in the same turn it drains one; an `init` that waited on a promise
    * would change what the first render of every replay sees. The caller keeps the map current.
    */
-  /** True when a frame went out. False is a refused route: the page is answered and told nothing,
-   *  which the caller has to know before it spends a one-shot param on it. */
-  function sendInit(): boolean {
+  /**
+   * Posts `init` and answers whether the page received it.
+   *
+   * False for a refused route, which is answered with nothing, and false for a frame the view
+   * would not take. Settled after the post rather than after the handover, because the caller
+   * spends a one-shot route param on this answer.
+   */
+  async function sendInit(): Promise<boolean> {
     const route = routes.current()
     if (route === null) {
       return false
     }
     initSent = true
-    send(
-      createBridgeInitFrame({
-        sessionId,
-        buildId,
-        connection: snapshot(),
-        route,
-        pageRoutes,
-        ...(parsedRouteGrants?.success === true ? { pageRouteGrants: parsedRouteGrants.data } : {}),
-        granted,
-        host,
-        ...options.readStorage()
-      })
+    return postJson(
+      JSON.stringify(
+        createBridgeInitFrame({
+          sessionId,
+          buildId,
+          connection: snapshot(),
+          route,
+          pageRoutes,
+          ...(parsedRouteGrants?.success === true
+            ? { pageRouteGrants: parsedRouteGrants.data }
+            : {}),
+          granted,
+          host,
+          ...options.readStorage()
+        })
+      )
     )
-    return true
   }
 
   function sendReply(id: string, payload: RpcResponse): void {
@@ -334,12 +308,12 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
     if (message.type === 'ready') {
       serving = true
       routes.readReady(message)
-      const sentInit = sendInit()
+      const delivered = sendInit()
       // Every time it is asked, not once: the page re-asks on a backoff, and the shell's wait ends
       // on the first of those that lands rather than on a particular one. Carrying whether an
-      // `init` went out, because a refused route answers the ask with nothing and a caller that
-      // clears a one-shot param here would spend a tap the page never received.
-      options.onPageReady(sentInit)
+      // the frame reached the page, which is not the same fact and settles later: a refused route
+      // answers the ask with nothing, and a view that is gone refuses what it was handed.
+      options.onPageReady(delivered)
       return
     }
     if (!serving) {

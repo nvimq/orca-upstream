@@ -23,6 +23,10 @@ type ScreenDependencies = {
   lifecycle: string[]
   /** Every render of the shell view, which is one per render of the screen above it. */
   viewRenders: number
+  /** Every frame the shell posted to the page, raw. */
+  posted: string[]
+  /** Whether the view refuses what it is handed, which is a page the post never reached. */
+  postFails: boolean
   state: MobileWebShellSessionState
   /** Null for every case but the bridge's: with no client the hook builds no host at all. */
   client: FakeRpcClient | null
@@ -59,6 +63,8 @@ const dependencies = vi.hoisted((): ScreenDependencies => {
     routeGrants: DEFAULT_ROUTE_GRANTS,
     lifecycle: [],
     viewRenders: 0,
+    posted: [],
+    postFails: false,
     state: { kind: 'checking' },
     client: null
   }
@@ -132,7 +138,10 @@ vi.mock('../../modules/orca-mobile-web-shell/src', async () => {
   const React = await import('react')
   const loadState = await import('../../modules/orca-mobile-web-shell/src/load-state')
   return {
-    OrcaMobileWebShellView: (props: { sessionId: string }) => {
+    OrcaMobileWebShellView: (props: {
+      sessionId: string
+      ref?: (handle: { postBridgeMessage: (json: string) => Promise<void> } | null) => void
+    }) => {
       dependencies.viewRenders += 1
       React.useEffect(() => {
         dependencies.lifecycle.push(`mount:${props.sessionId}`)
@@ -140,6 +149,22 @@ vi.mock('../../modules/orca-mobile-web-shell/src', async () => {
           dependencies.lifecycle.push(`unmount:${props.sessionId}`)
         }
       }, [props.sessionId])
+      // The handle the real view exposes, which nothing here used to attach: without it every
+      // post rejected as a view that is gone, so no case could see a frame reach the page.
+      const attach = props.ref
+      React.useLayoutEffect(() => {
+        attach?.({
+          postBridgeMessage: (json: string) => {
+            dependencies.posted.push(json)
+            return dependencies.postFails
+              ? Promise.reject(new Error('the view would not take it'))
+              : Promise.resolve()
+          }
+        })
+        return () => {
+          attach?.(null)
+        }
+      }, [attach])
       return React.createElement('ShellViewProbe', props)
     },
     parseMobileWebShellLoadState: loadState.parseMobileWebShellLoadState
@@ -273,6 +298,8 @@ beforeEach(() => {
   dependencies.storageRefreshes = 0
   dependencies.lifecycle.length = 0
   dependencies.viewRenders = 0
+  dependencies.posted.length = 0
+  dependencies.postFails = false
   dependencies.client = null
   dependencies.routeGrants = DEFAULT_ROUTE_GRANTS
   dependencies.back.mockReset()
@@ -484,6 +511,48 @@ describe('the hybrid shell screen', () => {
     })
     // The `init` that answered the ask carried it, so the caller may spend the param — once.
     expect(delivered).toEqual([{ pathname: '/h/host-1', params: { paneKey: 'pane-1' } }])
+  })
+
+  /**
+   * A frame the view would not take (CodeRabbit on `bridge-host.ts:104-126`).
+   *
+   * `sendInit` answered "sent" the moment it handed the JSON to `post`, and the post's rejection
+   * was reported a turn later as a diagnostic. So the screen spent the one-shot `paneKey` on a
+   * frame the page never received: the switch cleared the native param and the tap was gone.
+   */
+  it('reports no delivery for an init the view refused, so the param is not spent', async () => {
+    dependencies.client = createFakeRpcClient()
+    dependencies.postFails = true
+    const warned = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const delivered: unknown[] = []
+    dependencies.state = readyState('session-one')
+    const rendered: { tree: ReactTestRenderer | null } = { tree: null }
+    await act(async () => {
+      rendered.tree = create(
+        createElement(MobileWebShellScreen, {
+          hostId: 'host-1',
+          route: { pathname: '/h/host-1', params: { paneKey: 'pane-1' } },
+          fallback: createElement(NativeFallback),
+          onRouteDelivered: (route) => delivered.push(route)
+        })
+      )
+    })
+    const tree = rendered.tree
+    if (tree === null) {
+      throw new Error('screen did not render')
+    }
+    mounted.push(tree)
+    await act(async () => {
+      byName(tree, 'ShellViewProbe')[0].props.onBridgeMessage({
+        nativeEvent: { json: clientFrame({ type: 'ready' }) }
+      })
+    })
+    // The frame was built and handed over, and the view refused it.
+    expect(dependencies.posted).toHaveLength(1)
+    expect(delivered).toEqual([])
+    // The page still asked, which is a different fact from the frame landing.
+    expect(dependencies.reportPageReady).toHaveBeenCalled()
+    warned.mockRestore()
   })
 
   it('ends that wait on the page asking for a session', async () => {

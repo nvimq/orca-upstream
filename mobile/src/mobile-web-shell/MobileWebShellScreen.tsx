@@ -215,17 +215,17 @@ export function MobileWebShellScreen({
     // the map as they are made. This re-seats that map on the store afterwards, for the key whose
     // write never persisted, and it runs on every ask because a document that reloads inside this
     // mount asks again.
-    onPageReady: (sentInit) => {
+    onPageReady: (delivered) => {
       reportPageReady()
       void refreshStorage()
-      // Only when a frame went out. The `init` is built and posted before this runs, so on the
-      // ordinary path the route has reached the page and a one-shot param on it is spent — but a
-      // route the host refused answers the ask with nothing, and clearing the param there would
-      // spend a tap the page never received. Unreachable from the session switch, which parses the
-      // route before it mounts this screen; the prop's contract says it anyway.
-      if (sentInit) {
-        onRouteDelivered?.(route)
-      }
+      // Awaited, not read: the page asking and the frame answering it landing are two facts, and
+      // the second settles later. A route param spent on the first is spent on a frame a view
+      // that is gone refused.
+      void delivered.then((landed) => {
+        if (landed) {
+          onRouteDelivered?.(route)
+        }
+      })
     },
     // `document-load-failed` because that is what happens: the document loads and the page refuses
     // the session, so no tree is ever built. The refetch it costs is wasted on a route this shell
@@ -266,22 +266,35 @@ export function MobileWebShellScreen({
   // session switch keeps `paneKey` out of its key so a notification tap for another pane is a tab
   // switch rather than a page reload, and this is how the page hears about it. Keyed on the page's
   // own identity for a route, so a re-render holding an equal route publishes nothing.
-  const publishedRouteKey = useRef(shellScreenRouteKey(route))
+  const attemptedRouteKey = useRef<string | null>(shellScreenRouteKey(route))
   const publishRoute = bridge.publishRoute
   useEffect(() => {
     const key = shellScreenRouteKey(route)
-    if (key === publishedRouteKey.current) {
+    if (key === attemptedRouteKey.current) {
       return
     }
     // Recorded only once a frame has gone out. A publish the hook refuses — no host yet, which is
     // the gap between a ready session and its mounted bridge — leaves the key unrecorded, so the
     // render that brings the host publishes the route the page never received. `publishRoute`'s
     // identity changes with the inputs the host is built from, which is what re-runs this.
-    if (!publishRoute(route)) {
-      return
+    // Attempted now, recorded only once the frame has reached the page. A publish that was
+    // refused — no host yet, or a view that would not take it — leaves nothing recorded, so the
+    // next render that can carry it tries again.
+    attemptedRouteKey.current = key
+    let live = true
+    void publishRoute(route).then((landed) => {
+      if (!live) {
+        return
+      }
+      if (!landed) {
+        attemptedRouteKey.current = null
+        return
+      }
+      onRouteDelivered?.(route)
+    })
+    return () => {
+      live = false
     }
-    publishedRouteKey.current = key
-    onRouteDelivered?.(route)
   }, [onRouteDelivered, publishRoute, route])
 
   // A profile read that rejected never becomes a host, so the session would otherwise sit in

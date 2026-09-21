@@ -14,11 +14,11 @@ export type BridgeHostRoute = {
   /** What the page's latest `ready` said it can be sent. Reset by each document's `ready`. */
   readonly readReady: (message: Extract<BridgeClientMessage, { type: 'ready' }>) => void
   /**
-   * Hands the page a rewritten param for the screen it is already on, and answers whether a frame
-   * went out. The held route moves either way, so a page that reloads inside this mount is given
-   * the newest one on its next `ready` even when it is too old to be sent one in flight.
+   * Hands the page a rewritten param for the screen it is already on, and answers whether the
+   * frame reached it. The held route moves either way, so a page that reloads inside this mount is
+   * given the newest one on its next `ready` even when it is too old to be sent one in flight.
    */
-  readonly publish: (next: BridgeInitRoute, deliverable: boolean) => boolean
+  readonly publish: (next: BridgeInitRoute, deliverable: boolean) => Promise<boolean>
 }
 
 /**
@@ -39,7 +39,7 @@ export function createBridgeHostRoute(args: {
   opened: BridgeInitRoute
   /** True when the pair beside the route was itself refused; then no session is served either. */
   refused: boolean
-  sendInit: () => void
+  sendInit: () => Promise<boolean>
   onRefused: (issue: string) => void
 }): BridgeHostRoute {
   const parsed = BridgeInitRouteSchema.safeParse(args.opened)
@@ -55,14 +55,13 @@ export function createBridgeHostRoute(args: {
       const update = readBridgeRouteUpdate({ held: route, next, accepts, deliverable })
       if (update.kind === 'refuse') {
         args.onRefused(update.issue)
-        return false
+        return Promise.resolve(false)
       }
       route = update.route
       if (update.kind === 'hold') {
-        return false
+        return Promise.resolve(false)
       }
-      args.sendInit()
-      return true
+      return args.sendInit()
     }
   }
 }

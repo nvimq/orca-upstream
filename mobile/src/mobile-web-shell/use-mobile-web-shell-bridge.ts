@@ -49,10 +49,10 @@ export type MobileWebShellBridgeView = {
   readonly onBridgeMessage: (event: MobileWebShellBridgeMessageEvent) => void
   /**
    * Hands the mounted host a rewritten route for the screen it is already serving, and answers
-   * whether a frame went out. False whenever there is no host yet, which the caller has to know:
-   * a param it clears after a publish nobody made is a request the page never heard.
+   * whether the frame reached the page. False whenever there is no host yet, which the caller has
+   * to know: a param it clears after a publish nobody made is a request the page never heard.
    */
-  readonly publishRoute: (route: BridgeInitRoute) => boolean
+  readonly publishRoute: (route: BridgeInitRoute) => Promise<boolean>
 }
 
 /**
@@ -95,7 +95,7 @@ export function useMobileWebShellBridge(args: {
   /** The page could not render the generation on screen. Reported, never recovered from here. */
   onPageFault: (error: BridgeErrorCapture) => void
   /** The page asked for a session. Reported so the screen can stop waiting for it. */
-  onPageReady: (sentInit: boolean) => void
+  onPageReady: (delivered: Promise<boolean>) => void
   /** This shell named a screen the protocol does not allow, so no session is served. */
   onRouteRefused: (issue: string) => void
   /** Every screencast frame this host has dropped, so the shell can show the running total. */
@@ -190,9 +190,9 @@ export function useMobileWebShellBridge(args: {
       onPageFault: (error) => {
         pageFaultRef.current(error)
       },
-      onPageReady: (sentInit) => {
+      onPageReady: (delivered) => {
         establishedSessionRef.current = sessionId
-        pageReadyRef.current(sentInit)
+        pageReadyRef.current(delivered)
       },
       onRouteRefused: (issue) => {
         routeRefusedRef.current(issue)
@@ -261,11 +261,11 @@ export function useMobileWebShellBridge(args: {
     // effect is a layout effect, so by the time a passive effect sees the new identity the host
     // behind it exists.
     publishRoute: useCallback(
-      (route: BridgeInitRoute) => {
+      async (route: BridgeInitRoute) => {
         const mounted = hostRef.current
-        return (
-          mounted !== null && mounted.sessionId === sessionId && mounted.host.publishRoute(route)
-        )
+        return mounted !== null && mounted.sessionId === sessionId
+          ? mounted.host.publishRoute(route)
+          : false
       },
       [buildId, client, sessionId, snapshot]
     )
