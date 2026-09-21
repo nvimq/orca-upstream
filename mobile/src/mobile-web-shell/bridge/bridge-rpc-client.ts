@@ -304,8 +304,18 @@ export function createBridgeRpcClient(options: BridgeRpcClientOptions): BridgeRp
 
   /** After `close` the page is not the document the shell is answering any more. */
   function receive(json: string): void {
-    if (!closed) {
+    if (closed) {
+      return
+    }
+    try {
       readInboundFrame(json)
+    } catch (error) {
+      // The delivery is the channel's and the handling is the page's (ruling 34 addendum). This is
+      // the one place that separates them: on iOS the host's post is `callAsyncJavaScript`, so a
+      // listener throwing here would reject a post for a frame the page already had, and the shell
+      // would read that as a frame that never arrived. Reported and not rethrown, and not retried
+      // either — the same listener would throw on the same frame again.
+      report({ kind: 'inbound-listener-threw', error })
     }
   }
 

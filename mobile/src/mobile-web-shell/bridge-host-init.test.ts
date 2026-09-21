@@ -177,6 +177,40 @@ describe('init and state', () => {
     expect(bridge.posted).toHaveLength(2)
   })
 
+  /**
+   * The repair path, pinned rather than described (ruling 34 addendum).
+   *
+   * A post is refused only when no document holds the view, and every one of those is followed by
+   * a fresh document's `ready`. What makes that a repair is the held route advancing on `hold` as
+   * well as on `send`: the tap arrives while the page cannot be sent one, and the next document is
+   * answered with the route the tap wrote rather than the one the shell opened on.
+   */
+  it('answers the next document with the route a tap wrote while the view was gone', async () => {
+    const view = { gone: true }
+    const bridge = harness({
+      route: { pathname: '/h/host-a/session/wt-1' },
+      post: () => (view.gone ? Promise.reject(new Error('the view is gone')) : Promise.resolve())
+    })
+    // A page that declares nothing is never sent a second `init`, so the tap can only be held.
+    bridge.host.receive(clientFrame({ type: 'ready' }))
+    bridge.host.publishRoute({
+      pathname: '/h/host-a/session/wt-1',
+      params: { paneKey: 'pane-1' }
+    })
+    for (let turn = 0; turn < 4; turn += 1) {
+      await Promise.resolve()
+    }
+    expect(bridge.posted).toHaveLength(1)
+    // The next document over the same host: a reload, or the view coming back.
+    view.gone = false
+    bridge.host.receive(clientFrame({ type: 'ready' }))
+    const init = bridge.last()
+    expect(init.type === 'init' && init.route).toEqual({
+      pathname: '/h/host-a/session/wt-1',
+      params: { paneKey: 'pane-1' }
+    })
+  })
+
   it('opens a session for the routes a screen actually produces', () => {
     for (const pathname of ['/h/host-a', '/h/host-a/tasks', '/h/a%20b', '/']) {
       const bridge = harness({ route: { pathname } })

@@ -22,9 +22,12 @@ export const BRIDGE_ROUTE_UPDATE_ACCEPT = 'route-update'
  *
  * The reader erases (ruling 34). A notification tap writes `paneKey` onto the native route, the
  * shell re-sends `init` for as long as it holds one, and the page — having applied the pane — asks
- * for it to be cleared, naming the value it applied. Nothing tracks delivery on either side: a
- * frame that never arrived is repaired by the next `init`, and a clear naming a pane the tap has
- * already moved past is refused by the comparison rather than by a sequence number.
+ * for it to be cleared, naming the value it applied. Nothing tracks delivery on either side, and
+ * the shell learns nothing from a post: a frame the page received and then failed to handle is the
+ * page's own failure, reported there, and a post is refused only when no document holds the view.
+ * Every one of those is followed by a fresh document's `ready`, answered with the route the shell
+ * holds then. A clear naming a pane the tap has already moved past is refused by the comparison
+ * rather than by a sequence number.
  *
  * Declared in `init` rather than assumed, in the direction `ready.accepts` runs the other way. No
  * shipped shell serves a page, so nothing needs negotiating today; the declaration is here so the

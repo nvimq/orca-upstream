@@ -19,9 +19,12 @@ export type BridgeHostRoute = {
    * mount is given the newest one on its next `ready` even when it is too old to be sent one in
    * flight.
    *
-   * Answers nothing, and nothing here remembers whether the frame arrived (ruling 34). A lost
-   * frame is repaired by the next `init` — the page's own backoff asks for one — and the request
-   * it carried is spent by the page, which erases the param it applied.
+   * Answers nothing, and nothing here learns anything from a post (ruling 34). It cannot: a frame
+   * the page received and then failed to handle is caught by the page and reported there, so what
+   * is left is a post refused because no document holds the view — the handle is gone, the session
+   * changed, or this host is closed. Every one of those is followed by a fresh document's `ready`,
+   * which is answered with the route held now, because the held route advances on `hold` as well
+   * as on `send`. The request that route carries is spent by the page, which erases the param.
    */
   readonly publish: (next: BridgeInitRoute, deliverable: boolean) => void
 }

@@ -234,6 +234,41 @@ describe('bridge client before a session', () => {
   })
 })
 
+/**
+ * A frame the page received and then failed to handle (ruling 34 addendum).
+ *
+ * On iOS the host's post is `callAsyncJavaScript`, which rejects when the page's synchronous
+ * `onmessage` throws — with the document still mounted. That reads to the shell exactly like a
+ * frame that never arrived, and the shell tracks nothing about posts, so nothing would ever send
+ * it again. It is not a lost frame either: the page had it, its own listener failed, and a retry
+ * would fail the same way. The page catches it and says so.
+ */
+describe('a listener of the page that throws on a frame it received', () => {
+  it('is reported once, leaves the client usable, and never escapes the delivery', () => {
+    const page = createPageClient()
+    page.start()
+    const thrown = new Error('the pane hook could not apply it')
+    page.client.onRouteUpdate(() => {
+      throw thrown
+    })
+    const moved = {
+      ...INIT,
+      route: { pathname: '/h/host-a/session/wt-1', params: { paneKey: 'pane-1' } }
+    }
+    // What `__deliver` does on the device: one synchronous call, whose throw would reject the post.
+    expect(() => page.deliver(moved)).not.toThrow()
+    expect(page.diagnostics).toEqual([{ kind: 'inbound-listener-threw', error: thrown }])
+    // And the next frame is read: the failure was the listener's, not the channel's. This one is
+    // refused by the reader, which is a diagnostic the channel could only raise while it still
+    // works.
+    page.deliver(eventFrame('unknown-exchange-id-0', 1, 'x'))
+    expect(page.diagnostics.map((entry) => entry.kind)).toEqual([
+      'inbound-listener-threw',
+      'refused'
+    ])
+  })
+})
+
 describe('bridge client after close', () => {
   it('goes inert instead of throwing into a teardown, and posts nothing more', async () => {
     const page = createPageClient()
@@ -536,8 +571,14 @@ describe('bridge client acks', () => {
     })
     const id = idOf(page, 0)
     for (let seq = 1; seq <= BRIDGE_ACK_INTERVAL_FRAMES; seq += 1) {
-      expect(() => page.deliver(eventFrame(id, seq, seq))).toThrow('listener bug')
+      // Reported rather than thrown (ruling 34 addendum), and counted either way: the window is
+      // the shell's to reopen, and a page that let the throw out would reject the host's post for
+      // a frame it had already taken.
+      expect(() => page.deliver(eventFrame(id, seq, seq))).not.toThrow()
     }
+    expect(
+      page.diagnostics.filter((entry) => entry.kind === 'inbound-listener-threw')
+    ).toHaveLength(BRIDGE_ACK_INTERVAL_FRAMES)
     expect(page.frames().filter((frame) => frame.type === 'ack')).toHaveLength(1)
   })
 
