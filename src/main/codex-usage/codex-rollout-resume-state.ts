@@ -3,7 +3,7 @@
  * stopped. A wrong answer here silently corrupts usage totals, so every check
  * fails closed: anything unproven falls back to a full reparse.
  */
-import { createReadStream } from 'node:fs'
+import { createReadStream, constants } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import { createHash } from 'node:crypto'
 import type { CodexUsageParseContext } from './codex-usage-record-parser'
@@ -49,7 +49,11 @@ async function readWindowDigest(
   const expectedBytes = endExclusive - start
   const hash = createHash('sha256')
   let readBytes = 0
-  const stream = createReadStream(filePath, { start, end: endExclusive - 1 })
+  const stream = createReadStream(filePath, {
+    start,
+    end: endExclusive - 1,
+    flags: constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0)
+  })
   for await (const chunk of stream) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
     hash.update(buffer)

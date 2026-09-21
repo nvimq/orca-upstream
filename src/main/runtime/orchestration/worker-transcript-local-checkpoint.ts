@@ -1,3 +1,4 @@
+import { constants } from 'node:fs'
 import { open, stat } from 'node:fs/promises'
 import {
   createWorkerTranscriptBoundaryCheckpoint,
@@ -20,7 +21,10 @@ export async function readLocalTranscriptPathBoundaryCheckpoint(
   sourceIdentity: WorkerTranscriptSourceIdentity,
   offset: number
 ): Promise<string | null> {
-  const handle = await open(filePath, 'r')
+  const handle = await open(
+    filePath,
+    constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0)
+  )
   try {
     const opened = localWorkerTranscriptSourceIdentity(await handle.stat({ bigint: true }))
     if (!opened || opened.fingerprint !== sourceIdentity.fingerprint || opened.size < offset) {

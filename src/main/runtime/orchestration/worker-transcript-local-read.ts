@@ -1,3 +1,4 @@
+import { constants } from 'node:fs'
 import { open } from 'node:fs/promises'
 import type { NativeChatMessage } from '../../../shared/native-chat-types'
 import {
@@ -88,7 +89,10 @@ export async function readForwardLocalWorkerTranscriptPage(
     return sourceChanged()
   }
   const scanEnd = Math.min(fileSize, startOffset + MAX_REMOTE_TRANSCRIPT_SCAN_BYTES)
-  const handle = await open(filePath, 'r')
+  const handle = await open(
+    filePath,
+    constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0)
+  )
   const opened = localWorkerTranscriptSourceIdentity(await handle.stat({ bigint: true }))
   if (!opened || opened.fingerprint !== sourceIdentity.fingerprint || opened.size < scanEnd) {
     await handle.close()

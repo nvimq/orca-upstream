@@ -1,6 +1,6 @@
 import { basename } from 'node:path'
 import { stat } from 'node:fs/promises'
-import { createReadStream } from 'node:fs'
+import { createReadStream, constants } from 'node:fs'
 import { createInterface } from 'node:readline'
 import type { ClaudeUsageParsedTurn, ClaudeUsageProcessedFile } from './types'
 
@@ -181,7 +181,10 @@ export async function parseClaudeUsageFile(filePath: string): Promise<ClaudeUsag
   const turns: ClaudeUsageParsedSourceTurn[] = []
   const fallbackSessionId = basename(filePath, '.jsonl')
   const lines = createInterface({
-    input: createReadStream(filePath, { encoding: 'utf-8' }),
+    input: createReadStream(filePath, {
+      encoding: 'utf-8',
+      flags: constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0)
+    }),
     crlfDelay: Infinity
   })
 
@@ -204,7 +207,10 @@ export async function readClaudeUsageScanFile(filePath: string): Promise<{
   const turns: ClaudeUsageParsedSourceTurn[] = []
   const fallbackSessionId = basename(filePath, '.jsonl')
   const lines = createInterface({
-    input: createReadStream(filePath, { encoding: 'utf-8' }),
+    input: createReadStream(filePath, {
+      encoding: 'utf-8',
+      flags: constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0)
+    }),
     crlfDelay: Infinity
   })
 
