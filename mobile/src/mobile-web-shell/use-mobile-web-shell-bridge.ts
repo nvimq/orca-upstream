@@ -255,6 +255,11 @@ export function useMobileWebShellBridge(args: {
     ),
     // Fenced on the session the same way inbound frames are: a host left over from a session this
     // render has moved past must not be handed this one's route.
+    //
+    // Keyed on everything the host is built from, not on the session alone: a caller that holds a
+    // route the host was not there to take retries when this identity changes, and the host's own
+    // effect is a layout effect, so by the time a passive effect sees the new identity the host
+    // behind it exists.
     publishRoute: useCallback(
       (route: BridgeInitRoute) => {
         const mounted = hostRef.current
@@ -262,7 +267,7 @@ export function useMobileWebShellBridge(args: {
           mounted !== null && mounted.sessionId === sessionId && mounted.host.publishRoute(route)
         )
       },
-      [sessionId]
+      [buildId, client, sessionId, snapshot]
     )
   }
 }

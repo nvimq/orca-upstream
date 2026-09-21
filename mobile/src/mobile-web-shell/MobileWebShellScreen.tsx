@@ -273,10 +273,15 @@ export function MobileWebShellScreen({
     if (key === publishedRouteKey.current) {
       return
     }
-    publishedRouteKey.current = key
-    if (publishRoute(route)) {
-      onRouteDelivered?.(route)
+    // Recorded only once a frame has gone out. A publish the hook refuses — no host yet, which is
+    // the gap between a ready session and its mounted bridge — leaves the key unrecorded, so the
+    // render that brings the host publishes the route the page never received. `publishRoute`'s
+    // identity changes with the inputs the host is built from, which is what re-runs this.
+    if (!publishRoute(route)) {
+      return
     }
+    publishedRouteKey.current = key
+    onRouteDelivered?.(route)
   }, [onRouteDelivered, publishRoute, route])
 
   // A profile read that rejected never becomes a host, so the session would otherwise sit in

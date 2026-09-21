@@ -434,6 +434,58 @@ describe('the hybrid shell screen', () => {
     expect(dependencies.storageRefreshes).toBe(2)
   })
 
+  /**
+   * A route that moved before the host existed (CodeRabbit on `:271`).
+   *
+   * The effect recorded the route's key and then published, so a publish the hook refused for
+   * having no host counted as delivered anyway. This pins the delivery contract across that gap:
+   * the caller is told once, and only when a frame carrying the route actually reached the page.
+   *
+   * It does not reproduce a lost tap, and the fix beside it is hygiene rather than a repair: the
+   * host is built from the route the render holds, so a route that moved before it existed is in
+   * the first `init` regardless, and `publishRoute` then answers "did not move". What the fix
+   * removes is a key recorded for a frame nobody sent.
+   */
+  it('reports a route that moved before the host existed once, when the page receives it', async () => {
+    dependencies.client = null
+    const delivered: { pathname: string; params?: Record<string, string> }[] = []
+    const screen = (params: Record<string, string>) =>
+      createElement(MobileWebShellScreen, {
+        hostId: 'host-1',
+        route: { pathname: '/h/host-1', params },
+        fallback: createElement(NativeFallback),
+        onRouteDelivered: (route) => delivered.push(route)
+      })
+    dependencies.state = readyState('session-one')
+    const rendered: { tree: ReactTestRenderer | null } = { tree: null }
+    await act(async () => {
+      rendered.tree = create(screen({ paneKey: '' }))
+    })
+    const tree = rendered.tree
+    if (tree === null) {
+      throw new Error('screen did not render')
+    }
+    mounted.push(tree)
+    // The tap, with no host to take it: nothing reached the page, so nothing is reported.
+    await act(async () => {
+      tree.update(screen({ paneKey: 'pane-1' }))
+    })
+    expect(delivered).toEqual([])
+    dependencies.client = createFakeRpcClient()
+    await act(async () => {
+      tree.update(screen({ paneKey: 'pane-1' }))
+    })
+    // Still nothing: the host now holds that route and has not sent anything yet.
+    expect(delivered).toEqual([])
+    await act(async () => {
+      byName(tree, 'ShellViewProbe')[0].props.onBridgeMessage({
+        nativeEvent: { json: clientFrame({ type: 'ready' }) }
+      })
+    })
+    // The `init` that answered the ask carried it, so the caller may spend the param — once.
+    expect(delivered).toEqual([{ pathname: '/h/host-1', params: { paneKey: 'pane-1' } }])
+  })
+
   it('ends that wait on the page asking for a session', async () => {
     dependencies.client = createFakeRpcClient()
     const tree = await render(readyState('session-one'))
