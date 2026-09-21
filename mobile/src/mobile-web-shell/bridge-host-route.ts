@@ -75,9 +75,21 @@ export function createBridgeHostRoute(args: {
       return
     }
     inFlight = true
-    void args.sendInit().finally(() => {
-      inFlight = false
-    })
+    void args.sendInit().then(
+      (landed) => {
+        inFlight = false
+        // A landing is itself a moment to publish: a route that moved while this frame was out was
+        // held for the turn, and on a mounted page no `ready`, handle or tap need ever come along
+        // to wake it. Only on a landing, because a refused post that re-attempted itself would
+        // spin — that one waits for whatever made delivery possible again.
+        if (landed && route !== null) {
+          attempt(route, deliverable)
+        }
+      },
+      () => {
+        inFlight = false
+      }
+    )
   }
 
   return {

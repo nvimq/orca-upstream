@@ -223,7 +223,10 @@ describe('the native session route that hands off to the shell', () => {
     expect(paneKeysSeen()).toEqual(['pane-1'])
     // The page has it: the `init` that answered its `ready` carried it.
     await act(async () => {
-      dependencies.deliver.at(-1)?.({ pathname: '/h/host-1/session/wt-1' })
+      dependencies.deliver.at(-1)?.({
+        pathname: '/h/host-1/session/wt-1',
+        params: { paneKey: 'pane-1' }
+      })
     })
     await update(renderer)
     expect(dependencies.params.paneKey).toBe('')
@@ -231,6 +234,39 @@ describe('the native session route that hands off to the shell', () => {
     dependencies.params = { ...dependencies.params, paneKey: 'pane-1' }
     await update(renderer)
     expect(paneKeysSeen().filter((key) => key === 'pane-1')).toHaveLength(2)
+    expect(dependencies.lifecycle).toEqual(['mount:/h/host-1/session/wt-1'])
+  })
+
+  /**
+   * A landing for the pane before last does not spend the tap for the one after it (round 5).
+   *
+   * The report carries the route a frame reached the page with, and the host may already be
+   * publishing a newer one behind it: a tap that moved while the first frame was in flight leaves
+   * the param naming the second pane, and clearing on the first landing would wipe it — the page
+   * stays on the older pane and the newer tap is gone. Clear only what was delivered.
+   */
+  it('keeps a param naming a newer pane when an older one lands', async () => {
+    dependencies.params = { hostId: 'host-1', worktreeId: 'wt-1', paneKey: 'pane-1' }
+    const renderer = await renderSession()
+    dependencies.params = { ...dependencies.params, paneKey: 'pane-2' }
+    await update(renderer)
+    await act(async () => {
+      dependencies.deliver.at(-1)?.({
+        pathname: '/h/host-1/session/wt-1',
+        params: { paneKey: 'pane-1' }
+      })
+    })
+    await update(renderer)
+    expect(dependencies.params.paneKey).toBe('pane-2')
+    // The one the param names does reach the page, and then it is spent.
+    await act(async () => {
+      dependencies.deliver.at(-1)?.({
+        pathname: '/h/host-1/session/wt-1',
+        params: { paneKey: 'pane-2' }
+      })
+    })
+    await update(renderer)
+    expect(dependencies.params.paneKey).toBe('')
     expect(dependencies.lifecycle).toEqual(['mount:/h/host-1/session/wt-1'])
   })
 

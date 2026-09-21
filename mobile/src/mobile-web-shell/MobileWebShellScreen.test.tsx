@@ -480,6 +480,58 @@ describe('the hybrid shell screen', () => {
   })
 
   /**
+   * One screen whose route this case moves, and everything the page was told about it.
+   *
+   * The delivery family renders the same way every time — a fresh element per route so the prop
+   * identity moves, the delivery callback collecting what landed, a `ready` declaring the accept
+   * the second `init` needs — and a case that spells all of that out reads as setup rather than as
+   * the fact it pins.
+   */
+  async function renderForDelivery(params: Record<string, string>): Promise<{
+    tree: ReactTestRenderer
+    delivered: { pathname: string; params?: Record<string, string> }[]
+    paneKeys: () => string[]
+    move: (next: Record<string, string>) => Promise<void>
+    ready: (accepts?: readonly string[]) => Promise<void>
+  }> {
+    const delivered: { pathname: string; params?: Record<string, string> }[] = []
+    const element = (next: Record<string, string>) =>
+      createElement(MobileWebShellScreen, {
+        hostId: 'host-1',
+        route: { pathname: '/h/host-1', params: next },
+        fallback: createElement(NativeFallback),
+        onRouteDelivered: (route) => delivered.push(route)
+      })
+    dependencies.state = readyState('session-one')
+    const rendered: { tree: ReactTestRenderer | null } = { tree: null }
+    await act(async () => {
+      rendered.tree = create(element(params))
+    })
+    const tree = rendered.tree
+    if (tree === null) {
+      throw new Error('screen did not render')
+    }
+    mounted.push(tree)
+    return {
+      tree,
+      delivered,
+      paneKeys: () => delivered.map((route) => route.params?.paneKey ?? ''),
+      move: async (next) => {
+        await act(async () => {
+          tree.update(element(next))
+        })
+      },
+      ready: async (accepts = [BRIDGE_ROUTE_UPDATE_ACCEPT]) => {
+        await act(async () => {
+          byName(tree, 'ShellViewProbe')[0]?.props.onBridgeMessage({
+            nativeEvent: { json: clientFrame({ type: 'ready', accepts }) }
+          })
+        })
+      }
+    }
+  }
+
+  /**
    * A route that moved before the host existed (CodeRabbit on `:271`).
    *
    * The effect recorded the route's key and then published, so a publish the hook refused for
@@ -493,42 +545,17 @@ describe('the hybrid shell screen', () => {
    */
   it('reports a route that moved before the host existed once, when the page receives it', async () => {
     dependencies.client = null
-    const delivered: { pathname: string; params?: Record<string, string> }[] = []
-    const screen = (params: Record<string, string>) =>
-      createElement(MobileWebShellScreen, {
-        hostId: 'host-1',
-        route: { pathname: '/h/host-1', params },
-        fallback: createElement(NativeFallback),
-        onRouteDelivered: (route) => delivered.push(route)
-      })
-    dependencies.state = readyState('session-one')
-    const rendered: { tree: ReactTestRenderer | null } = { tree: null }
-    await act(async () => {
-      rendered.tree = create(screen({ paneKey: '' }))
-    })
-    const tree = rendered.tree
-    if (tree === null) {
-      throw new Error('screen did not render')
-    }
-    mounted.push(tree)
+    const page = await renderForDelivery({ paneKey: '' })
     // The tap, with no host to take it: nothing reached the page, so nothing is reported.
-    await act(async () => {
-      tree.update(screen({ paneKey: 'pane-1' }))
-    })
-    expect(delivered).toEqual([])
+    await page.move({ paneKey: 'pane-1' })
+    expect(page.delivered).toEqual([])
     dependencies.client = createFakeRpcClient()
-    await act(async () => {
-      tree.update(screen({ paneKey: 'pane-1' }))
-    })
+    await page.move({ paneKey: 'pane-1' })
     // Still nothing: the host now holds that route and has not sent anything yet.
-    expect(delivered).toEqual([])
-    await act(async () => {
-      byName(tree, 'ShellViewProbe')[0].props.onBridgeMessage({
-        nativeEvent: { json: clientFrame({ type: 'ready' }) }
-      })
-    })
+    expect(page.delivered).toEqual([])
+    await page.ready([])
     // The `init` that answered the ask carried it, so the caller may spend the param — once.
-    expect(delivered).toEqual([{ pathname: '/h/host-1', params: { paneKey: 'pane-1' } }])
+    expect(page.delivered).toEqual([{ pathname: '/h/host-1', params: { paneKey: 'pane-1' } }])
   })
 
   /**
@@ -542,32 +569,11 @@ describe('the hybrid shell screen', () => {
     dependencies.client = createFakeRpcClient()
     dependencies.postFails = true
     const warned = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-    const delivered: unknown[] = []
-    dependencies.state = readyState('session-one')
-    const rendered: { tree: ReactTestRenderer | null } = { tree: null }
-    await act(async () => {
-      rendered.tree = create(
-        createElement(MobileWebShellScreen, {
-          hostId: 'host-1',
-          route: { pathname: '/h/host-1', params: { paneKey: 'pane-1' } },
-          fallback: createElement(NativeFallback),
-          onRouteDelivered: (route) => delivered.push(route)
-        })
-      )
-    })
-    const tree = rendered.tree
-    if (tree === null) {
-      throw new Error('screen did not render')
-    }
-    mounted.push(tree)
-    await act(async () => {
-      byName(tree, 'ShellViewProbe')[0].props.onBridgeMessage({
-        nativeEvent: { json: clientFrame({ type: 'ready' }) }
-      })
-    })
+    const page = await renderForDelivery({ paneKey: 'pane-1' })
+    await page.ready([])
     // The frame was built and handed over, and the view refused it.
     expect(dependencies.posted).toHaveLength(1)
-    expect(delivered).toEqual([])
+    expect(page.delivered).toEqual([])
     // The page still asked, which is a different fact from the frame landing.
     expect(dependencies.reportPageReady).toHaveBeenCalled()
     warned.mockRestore()
@@ -586,41 +592,17 @@ describe('the hybrid shell screen', () => {
     dependencies.client = createFakeRpcClient()
     dependencies.postFails = true
     const warned = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-    const delivered: unknown[] = []
-    dependencies.state = readyState('session-one')
-    const rendered: { tree: ReactTestRenderer | null } = { tree: null }
-    await act(async () => {
-      rendered.tree = create(
-        createElement(MobileWebShellScreen, {
-          hostId: 'host-1',
-          route: { pathname: '/h/host-1', params: { paneKey: 'pane-1' } },
-          fallback: createElement(NativeFallback),
-          onRouteDelivered: (route) => delivered.push(route)
-        })
-      )
-    })
-    const tree = rendered.tree
-    if (tree === null) {
-      throw new Error('screen did not render')
-    }
-    mounted.push(tree)
-    const probe = byName(tree, 'ShellViewProbe')[0]
-    await act(async () => {
-      probe?.props.onBridgeMessage({
-        nativeEvent: {
-          json: clientFrame({ type: 'ready', accepts: [BRIDGE_ROUTE_UPDATE_ACCEPT] })
-        }
-      })
-    })
-    expect(delivered).toEqual([])
+    const page = await renderForDelivery({ paneKey: 'pane-1' })
+    await page.ready()
+    expect(page.delivered).toEqual([])
     // The same page, a handle it may be posted on again.
     dependencies.postFails = false
-    const handle = dependencies.handle
+    const probe = byName(page.tree, 'ShellViewProbe')[0]
     await act(async () => {
       probe?.props.ref(null)
-      probe?.props.ref(handle)
+      probe?.props.ref(dependencies.handle)
     })
-    expect(delivered).toEqual([{ pathname: '/h/host-1', params: { paneKey: 'pane-1' } }])
+    expect(page.delivered).toEqual([{ pathname: '/h/host-1', params: { paneKey: 'pane-1' } }])
     warned.mockRestore()
   })
 
@@ -633,46 +615,49 @@ describe('the hybrid shell screen', () => {
    */
   it('delivers once when the screen re-renders while the frame is in flight', async () => {
     dependencies.client = createFakeRpcClient()
-    const delivered: { pathname: string; params?: Record<string, string> }[] = []
-    const screen = (params: Record<string, string>) =>
-      createElement(MobileWebShellScreen, {
-        hostId: 'host-1',
-        route: { pathname: '/h/host-1', params },
-        fallback: createElement(NativeFallback),
-        onRouteDelivered: (route) => delivered.push(route)
-      })
-    dependencies.state = readyState('session-one')
-    const rendered: { tree: ReactTestRenderer | null } = { tree: null }
-    await act(async () => {
-      rendered.tree = create(screen({ paneKey: '' }))
-    })
-    const tree = rendered.tree
-    if (tree === null) {
-      throw new Error('screen did not render')
-    }
-    mounted.push(tree)
-    await act(async () => {
-      byName(tree, 'ShellViewProbe')[0]?.props.onBridgeMessage({
-        nativeEvent: {
-          json: clientFrame({ type: 'ready', accepts: [BRIDGE_ROUTE_UPDATE_ACCEPT] })
-        }
-      })
-    })
-    expect(delivered).toHaveLength(1)
+    const page = await renderForDelivery({ paneKey: '' })
+    await page.ready()
+    expect(page.delivered).toHaveLength(1)
     dependencies.holdPosts = true
-    await act(async () => {
-      tree.update(screen({ paneKey: 'pane-1' }))
-    })
+    await page.move({ paneKey: 'pane-1' })
     expect(dependencies.heldPosts).toHaveLength(1)
-    await act(async () => {
-      tree.update(screen({ paneKey: 'pane-1' }))
-    })
+    await page.move({ paneKey: 'pane-1' })
     // The route did not move, so the render in flight costs no second frame.
     expect(dependencies.heldPosts).toHaveLength(1)
     await act(async () => {
       dependencies.heldPosts[0]?.()
     })
-    expect(delivered.slice(1)).toEqual([{ pathname: '/h/host-1', params: { paneKey: 'pane-1' } }])
+    expect(page.paneKeys()).toEqual(['', 'pane-1'])
+  })
+
+  /**
+   * A pane asked for while the frame for the one before it is still in flight (round 5).
+   *
+   * One frame at a time is right — a second copy of `init` on the wire for a route already being
+   * sent is waste — but the held route that was refused a turn had nothing to wake it: the post
+   * settling only cleared the flag. So the newer pane sat until a `ready`, a handle or another
+   * tap happened along, and on a mounted page none of those is coming. A landing is now itself a
+   * moment to publish again, while what the host holds is not what the page has.
+   */
+  it('delivers a pane asked for during the frame before it, in order', async () => {
+    dependencies.client = createFakeRpcClient()
+    const page = await renderForDelivery({ paneKey: '' })
+    await page.ready()
+    dependencies.holdPosts = true
+    await page.move({ paneKey: 'pane-1' })
+    await page.move({ paneKey: 'pane-2' })
+    // Still one frame: the second pane is held, not sent alongside the first.
+    expect(dependencies.heldPosts).toHaveLength(1)
+    await act(async () => {
+      dependencies.heldPosts[0]?.()
+    })
+    // The landing is what publishes the one behind it.
+    expect(dependencies.heldPosts).toHaveLength(2)
+    await act(async () => {
+      dependencies.heldPosts[1]?.()
+    })
+    expect(page.paneKeys()).toEqual(['', 'pane-1', 'pane-2'])
+    expect(dependencies.lifecycle.filter((entry) => entry.startsWith('mount:'))).toHaveLength(1)
   })
 
   /**
@@ -685,43 +670,16 @@ describe('the hybrid shell screen', () => {
   it('delivers a repeat tap for the pane whose frame never landed', async () => {
     dependencies.client = createFakeRpcClient()
     const warned = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-    const delivered: { pathname: string; params?: Record<string, string> }[] = []
-    const screen = (params: Record<string, string>) =>
-      createElement(MobileWebShellScreen, {
-        hostId: 'host-1',
-        route: { pathname: '/h/host-1', params },
-        fallback: createElement(NativeFallback),
-        onRouteDelivered: (route) => delivered.push(route)
-      })
-    dependencies.state = readyState('session-one')
-    const rendered: { tree: ReactTestRenderer | null } = { tree: null }
-    await act(async () => {
-      rendered.tree = create(screen({ paneKey: '' }))
-    })
-    const tree = rendered.tree
-    if (tree === null) {
-      throw new Error('screen did not render')
-    }
-    mounted.push(tree)
-    await act(async () => {
-      byName(tree, 'ShellViewProbe')[0]?.props.onBridgeMessage({
-        nativeEvent: {
-          json: clientFrame({ type: 'ready', accepts: [BRIDGE_ROUTE_UPDATE_ACCEPT] })
-        }
-      })
-    })
-    expect(delivered).toHaveLength(1)
+    const page = await renderForDelivery({ paneKey: '' })
+    await page.ready()
+    expect(page.delivered).toHaveLength(1)
     dependencies.postFails = true
-    await act(async () => {
-      tree.update(screen({ paneKey: 'pane-1' }))
-    })
-    expect(delivered).toHaveLength(1)
+    await page.move({ paneKey: 'pane-1' })
+    expect(page.delivered).toHaveLength(1)
     // The tap was never spent, so the next one carries the same pane.
     dependencies.postFails = false
-    await act(async () => {
-      tree.update(screen({ paneKey: 'pane-1' }))
-    })
-    expect(delivered.slice(1)).toEqual([{ pathname: '/h/host-1', params: { paneKey: 'pane-1' } }])
+    await page.move({ paneKey: 'pane-1' })
+    expect(page.paneKeys()).toEqual(['', 'pane-1'])
     warned.mockRestore()
   })
 

@@ -43,11 +43,23 @@ export default function MobileSessionScreen() {
   const enabled = useMobileWebShellEnabled()
   const router = useRouter()
   const native = <MobileSessionRouteScreen />
+  const paneKey = firstParam(params.paneKey) ?? ''
   // Empty rather than absent, which is what the notification hook wrote and what the route builder
   // below drops: a cleared key and a key that was never there are the same route.
-  const clearPaneKey = useCallback(() => {
-    router.setParams({ paneKey: '' })
-  }, [router])
+  //
+  // Spent only by the pane it names. The report carries the route a frame reached the page with,
+  // and the host may be publishing a newer one behind it: a tap that moved while the first frame
+  // was in flight lands the older pane first, and clearing on that would wipe the param for the
+  // pane the page has not been given yet.
+  const clearPaneKey = useCallback(
+    (delivered: { params?: Record<string, string> }) => {
+      if (paneKey === '' || (delivered.params?.paneKey ?? '') !== paneKey) {
+        return
+      }
+      router.setParams({ paneKey: '' })
+    },
+    [paneKey, router]
+  )
 
   // Each omitted when empty, because the screen reads the difference: `created` is a one-shot flag
   // the create flow sets to `1`, `warning` is the host's own text, `name` is a label the screen
