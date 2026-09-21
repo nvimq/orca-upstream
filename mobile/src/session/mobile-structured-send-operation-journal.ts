@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { z } from 'zod'
-import { noteMirroredWrite } from '../storage/mirrored-storage-keys'
+import { noteMirroredWrite, readMirroredStorage } from '../storage/mirrored-storage-keys'
 import type { AgentJournalSubmission } from '../../../src/shared/agent-session-journal-types'
 import {
   AGENT_SESSION_MAX_NEW_OPERATION_AGE_MS,
@@ -87,16 +87,21 @@ function parseJournal(raw: string | null): OperationJournal {
 }
 
 async function writeEntries(entries: OperationEntry[]): Promise<void> {
-  if (entries.length === 0) {
-    // Noted before it is persisted: the hybrid shell hands this key to the page on every `init`,
-    // built synchronously, so a write that only reached the store would be one `init` behind.
-    noteMirroredWrite(STORAGE_KEY, null)
-    await AsyncStorage.removeItem(STORAGE_KEY)
-    return
-  }
-  const value = JSON.stringify({ v: 1, entries })
+  const value = entries.length === 0 ? null : JSON.stringify({ v: 1, entries })
+  // Noted before it is persisted: the hybrid shell hands this key to the page on every `init`,
+  // built synchronously, so a write that only reached the store would be one `init` behind. Put
+  // back when the store refuses it, because the other direction is worse — a page told about a
+  // journal the device never wrote resumes operations nothing is holding.
+  const held = readMirroredStorage([STORAGE_KEY])[STORAGE_KEY] ?? null
   noteMirroredWrite(STORAGE_KEY, value)
-  await AsyncStorage.setItem(STORAGE_KEY, value)
+  try {
+    await (value === null
+      ? AsyncStorage.removeItem(STORAGE_KEY)
+      : AsyncStorage.setItem(STORAGE_KEY, value))
+  } catch (error) {
+    noteMirroredWrite(STORAGE_KEY, held)
+    throw error
+  }
 }
 
 async function serialize<T>(action: () => Promise<T>): Promise<T> {
