@@ -1,6 +1,6 @@
 import { useLocalSearchParams } from 'expo-router'
 import { MobileSessionRouteScreen } from '../../../../src/session/MobileSessionRouteScreen'
-import { firstParam } from '../../../../src/source-control/mobile-source-control-screen-state'
+import { firstParam } from '../../../../src/navigation/route-param-reader'
 import {
   shellScreenRoute,
   shellScreenRouteKey
