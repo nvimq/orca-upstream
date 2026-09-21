@@ -388,9 +388,13 @@ const BridgeHostMessageSchema = z.union([
      * The allowlisted keys the shell holds a value for that `storage` could not carry, because the
      * app's value is over the page's own cap (ruling 33.6).
      *
-     * Optional and additive: an older shell sends none and an older page ignores it, which is the
-     * behaviour before this field — the page writes the key and replaces what the device held.
-     * Bounded by the same count as the storage record, since it names a subset of the same keys.
+     * Advisory, not the enforcement. The shell refuses a write to one of these on its own side
+     * too, because a page served from an older desktop bundle ignores this field entirely and
+     * would still replace what the device holds; this is the page's fast path, so a write it can
+     * refuse locally rejects without a round trip and reaches its caller as `too-large`.
+     *
+     * Optional and additive: an older shell sends none and an older page ignores it. Bounded by
+     * the same count as the storage record, since it names a subset of the same keys.
      */
     storageOversize: z
       .array(z.string().min(1).max(PAGE_STORAGE_MAX_KEY_CHARS).refine(isPageStorageKey))

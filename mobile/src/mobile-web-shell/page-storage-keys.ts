@@ -142,6 +142,28 @@ export function isPageStorageKeyForRoute(
   )
 }
 
+/**
+ * Whether the page opened for this route may write this key, which is three refusals in one.
+ *
+ * Not this page's host or route, not a key it was ever told about, or one the shell could not hand
+ * it for size (ruling 33.6). The last is the one the page cannot be trusted with: a document
+ * served from an older desktop bundle does not read `storageOversize`, so an allowlisted key it
+ * holds no value for would be written whole and replace what the device has. Decided here so the
+ * host and the page's own shim answer the same question.
+ */
+export function pageMayWriteStorageKey(
+  key: string,
+  hostId: string,
+  route: { pathname: string } | null,
+  held: PageStorageForInit
+): boolean {
+  return (
+    route !== null &&
+    isPageStorageKeyForRoute(key, hostId, route.pathname) &&
+    !held.storageOversize.includes(key)
+  )
+}
+
 /** What `init` carries about the app's store: the values, and the keys it could not carry. */
 export type PageStorageForInit = {
   storage: Readonly<Record<string, string>>

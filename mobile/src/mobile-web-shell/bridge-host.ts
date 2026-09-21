@@ -22,7 +22,7 @@ import { createBridgeInitFrame } from './bridge/bridge-init-frame'
 import { BRIDGE_HAPTICS_NOTIFY } from './bridge/bridge-haptics-notify'
 import { bridgeNotifyRefusal } from './bridge/bridge-notify-grants'
 import { splitBridgeReply } from './bridge/bridge-reply-chunking'
-import { isPageStorageKeyForRoute } from './page-storage-keys'
+import { pageMayWriteStorageKey } from './page-storage-keys'
 import { createBridgeHostRoute } from './bridge-host-route'
 import type { BridgeHostOptions } from './bridge-host-contract'
 
@@ -280,8 +280,11 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
         // Also local, and held to this host's own keys. The envelope allowlists the shape before
         // this runs, which lets `orca:pins:<any host>` through: a page opened for one host must
         // not rewrite another's pinned list, and the keys it was handed are the ones it may write.
-        const route = routes.current()
-        if (route === null || !isPageStorageKeyForRoute(message.key, host.id, route.pathname)) {
+        // Three refusals in one, decided where the keys are (ruling 33.6): the oversize half has
+        // to be enforced here because a page served from an older desktop bundle does not read
+        // `storageOversize` and would write the key whole over what the device holds.
+        const held = options.readStorage()
+        if (!pageMayWriteStorageKey(message.key, host.id, routes.current(), held)) {
           options.onDiagnostic?.({ kind: 'storage-refused', key: message.key })
           return
         }

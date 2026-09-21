@@ -269,6 +269,36 @@ describe('init and state', () => {
     expect(bridge.diagnostics).toEqual([{ kind: 'storage-refused', key: 'orca:pins:other-host' }])
   })
 
+  /**
+   * The rollout half of ruling 33.6 (pullfrog).
+   *
+   * The page's own refusal only exists in a page built with it; a document served from an older
+   * desktop bundle ignores `storageOversize` and writes the key anyway, which is the clobber the
+   * ruling is about. The shell holds the same list on the `init` path, so it refuses there too and
+   * an old page is refused as well.
+   */
+  it('refuses a write for a key it could not hand the page, whatever the page believes', () => {
+    const journal = 'orca:mobileStructuredSendOperations:v1'
+    const bridge = harness({
+      readStorage: () => ({
+        storage: { 'orca:pins:host-a': '["one"]' },
+        storageOversize: [journal]
+      })
+    })
+    bridge.host.receive(clientFrame({ type: 'ready' }))
+    bridge.host.receive(
+      clientFrame({ type: 'notify', name: 'storage', key: journal, value: '{"v":1,"entries":[]}' })
+    )
+    // Nothing reaches native storage, so the entries the device holds survive the page.
+    expect(bridge.storageWrites).toEqual([])
+    expect(bridge.diagnostics).toEqual([{ kind: 'storage-refused', key: journal }])
+    // And a key it did hand over is still writable, so the refusal is the size and not the path.
+    bridge.host.receive(
+      clientFrame({ type: 'notify', name: 'storage', key: 'orca:pins:host-a', value: '["two"]' })
+    )
+    expect(bridge.storageWrites).toEqual([{ key: 'orca:pins:host-a', value: '["two"]' }])
+  })
+
   it('reads the keys again for each init, rather than replaying what it started with', () => {
     let pins = '["one"]'
     const bridge = harness({
