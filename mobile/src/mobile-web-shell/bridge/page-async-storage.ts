@@ -124,28 +124,47 @@ function accept(key: string, value: string | null): PageStorageRefusal | null {
  * Logged and not silent, because the drop is the thing a reader of a device log has to be able to
  * find — a preference that did not stick looks identical to one nobody set.
  */
-function settle(key: string, refusal: PageStorageRefusal | null): Promise<void> {
+/**
+ * The error a refusal is, or nothing. Logged here, because the drop is the thing a reader of a
+ * device log has to be able to find — a preference that did not stick looks identical to one
+ * nobody set.
+ *
+ * An error rather than a rejected promise, so a caller that raises no rejection creates none. A
+ * promise built per refusal and then discarded is an unhandled rejection in the page, which is
+ * exactly what this module's rejection scope exists to avoid.
+ */
+function refusalError(
+  key: string,
+  refusal: PageStorageRefusal | null
+): PageStorageRefusedError | null {
   if (refusal === null) {
-    return Promise.resolve()
+    return null
   }
   if (refusal === 'too-large') {
-    return Promise.reject(new PageStorageRefusedError(key, refusal))
+    return new PageStorageRefusedError(key, refusal)
   }
   console.warn('[page-bridge] storage-write-dropped', { key, refusal })
-  return Promise.resolve()
+  return null
+}
+
+/** One refusal: the rejection the composer's catch is written for, or a logged drop. */
+function settle(key: string, refusal: PageStorageRefusal | null): Promise<void> {
+  const error = refusalError(key, refusal)
+  return error === null ? Promise.resolve() : Promise.reject(error)
 }
 
 /** The first refusal of a batch, after every pair that could be applied has been. Every dropped
- *  pair is logged by `settle`; only an oversize one can reject, and it does so after the rest. */
+ *  pair is logged as it is read; only an oversize one can reject, and it does so after the rest —
+ *  once, because the later ones are errors nobody turned into a promise. */
 function settleBatch(refusals: { key: string; refusal: PageStorageRefusal }[]): Promise<void> {
-  let rejection: Promise<void> | null = null
+  let rejection: PageStorageRefusedError | null = null
   for (const entry of refusals) {
-    const settled = settle(entry.key, entry.refusal)
-    if (entry.refusal === 'too-large' && rejection === null) {
-      rejection = settled
+    const error = refusalError(entry.key, entry.refusal)
+    if (error !== null && rejection === null) {
+      rejection = error
     }
   }
-  return rejection ?? Promise.resolve()
+  return rejection === null ? Promise.resolve() : Promise.reject(rejection)
 }
 
 const pageAsyncStorage = {

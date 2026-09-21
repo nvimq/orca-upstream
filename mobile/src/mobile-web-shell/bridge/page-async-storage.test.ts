@@ -153,6 +153,36 @@ describe('what the page will not keep', () => {
     expect(await pageAsyncStorage.getItem('orca:mobileStructuredSendOperations:v1')).toBeNull()
   })
 
+  /**
+   * A batch with two oversize pairs, which is one rejection and not two.
+   *
+   * `settleBatch` returned the first rejected promise and dropped the rest, so every later
+   * oversize entry was a rejected promise nobody held — an unhandled rejection in the page, which
+   * is the outcome this module's rejection scope exists to avoid.
+   */
+  it('rejects a batch of two oversize pairs once, leaving no rejection nobody holds', async () => {
+    publish()
+    const unhandled: unknown[] = []
+    const record = (reason: unknown) => {
+      unhandled.push(reason)
+    }
+    process.on('unhandledRejection', record)
+    const oversized = 'x'.repeat(PAGE_STORAGE_MAX_VALUE_CHARS + 1)
+    const refusal = await refusalOf(
+      pageAsyncStorage.multiSet([
+        ['orca:mobileStructuredSendOperations:v1', oversized],
+        ['orca:custom-accessory-keys', oversized]
+      ])
+    )
+    // Two turns, which is when an orphaned rejection is reported.
+    await new Promise((resolve) => setImmediate(resolve))
+    process.off('unhandledRejection', record)
+    expect(unhandled).toEqual([])
+    // The first pair is the one the caller is told about, and neither reached the wire.
+    expect(refusal.key).toBe('orca:mobileStructuredSendOperations:v1')
+    expect(writes).toEqual([])
+  })
+
   it('still keeps a value exactly at the bound, so the refusal above discriminates', async () => {
     publish()
     const atBound = 'x'.repeat(PAGE_STORAGE_MAX_VALUE_CHARS)
