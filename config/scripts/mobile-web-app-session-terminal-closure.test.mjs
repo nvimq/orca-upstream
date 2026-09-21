@@ -189,18 +189,28 @@ const MERMAID_PACKAGE = 'node_modules/mermaid/'
  * `src/session/MobileSessionRouteScreen.tsx` under it — the route file is one input either way and
  * the component is the one that is new.
  *
- * The number below is re-measured on the merge rather than summed, which is what the reading above
- * kept having to do: C7.7 measured 4,328 -> 4,329 against `23207bfde2` and item D measured
- * 4,328 -> 4,323 against a different base, and neither side's arithmetic survives the other. The
- * merge reads 4,324 modules and 982 local — one more than the 4,323 / 981 item D pinned, and that
- * one is C7.7's route body, read out of `ROUTE_ENTRY` below by name rather than inferred.
+ * The number below is re-measured rather than summed, which is what the reading above kept having
+ * to do: C7.7 measured 4,328 -> 4,329 against `23207bfde2` and item D measured 4,328 -> 4,323
+ * against a different base, and neither side's arithmetic survives the other. The merge with main
+ * read 4,324 modules and 982 local — one more than the 4,323 / 981 item D pinned, and that one is
+ * C7.7's route body, read out of `ROUTE_ENTRY` below by name rather than inferred.
+ *
+ * Round 1 re-measures it again at 4,326 / 984. The two are named rather than counted:
+ * `notification-pane-tab.ts`, which both siblings of the pane hook read (a `.web.ts` cannot import
+ * its native neighbour by the plain path — the bundler answers with itself), and
+ * `bridge-init-route.ts`, the route half of `init` split out of an envelope that was at its line
+ * cap. The pane hook's own web sibling replaces the native file rather than joining it, so it
+ * costs nothing.
  */
-const SESSION_ROUTE_MODULES = 4324
+const SESSION_ROUTE_MODULES = 4326
 
 /** What the page enters this route through once the route is a switch with a `.web.tsx` sibling. */
 const ROUTE_ENTRY = [
   'app/h/[hostId]/session/[worktreeId].web.tsx',
-  'src/session/MobileSessionRouteScreen.tsx'
+  'src/session/MobileSessionRouteScreen.tsx',
+  // Round 1's two, named for the reading above rather than left inside the total.
+  'src/session/notification-pane-tab.ts',
+  'src/mobile-web-shell/bridge/bridge-init-route.ts'
 ]
 
 const artifactModules = (inputs) => inputs.filter((input) => input.includes(MERMAID_PAGE_ENGINE))
