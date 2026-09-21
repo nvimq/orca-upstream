@@ -142,6 +142,12 @@ export function isPageStorageKeyForRoute(
   )
 }
 
+/** What `init` carries about the app's store: the values, and the keys it could not carry. */
+export type PageStorageForInit = {
+  storage: Readonly<Record<string, string>>
+  storageOversize: readonly string[]
+}
+
 /**
  * The allowlisted values as `init` may carry them: nothing over the caps the page's schema refines
  * on, and the names of whatever was left out.
@@ -164,12 +170,6 @@ export function isPageStorageKeyForRoute(
  * qualify: an entry-cap drop is a key that fits and did not make the frame, and the page's own
  * write of it is the same size the shell would have carried.
  */
-/** What `init` carries about the app's store: the values, and the keys it could not carry. */
-export type PageStorageForInit = {
-  storage: Readonly<Record<string, string>>
-  storageOversize: readonly string[]
-}
-
 export function pageStorageEntriesForInit(held: Readonly<Record<string, string>>): {
   entries: Record<string, string>
   dropped: string[]
