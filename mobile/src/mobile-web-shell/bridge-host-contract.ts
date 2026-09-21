@@ -2,6 +2,7 @@ import type { TerminalBacklogEnd, TerminalBacklogTimers } from './bridge-termina
 import type { RpcClient } from '../transport/rpc-client'
 import type { BridgeRefusal } from './bridge/bridge-caps'
 import type { BridgeInitHost, BridgeInitRoute } from './bridge/bridge-envelope'
+import type { BridgeClearableRouteParam } from './bridge/bridge-route-update'
 import type { BridgeHapticsKind } from './bridge/bridge-haptics-notify'
 import type { BridgeErrorCapture } from './bridge/bridge-error-capture'
 import type { BridgeNativeVerb } from './bridge/bridge-native-verbs'
@@ -179,6 +180,12 @@ export type BridgeHostOptions = {
    * would leave a document that never spoke looking exactly like one still starting up.
    */
   onPageReady: () => void
+  /**
+   * The page applied a one-shot route param and is asking for it to be erased (ruling 34), naming
+   * the value it applied. The holder of that param compares before it clears: a tap that has moved
+   * on since leaves a newer value here, and a clear naming the older one is not for it.
+   */
+  onRouteParamClear: (param: BridgeClearableRouteParam, value: string) => void
   /**
    * A frame carrying that route reached the page. Once per route, from whichever frame carried it —
    * the first `init`, a re-sent one, or a retry of a frame the view had refused — so the caller may

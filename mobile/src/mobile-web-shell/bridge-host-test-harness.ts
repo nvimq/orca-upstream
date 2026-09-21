@@ -49,6 +49,8 @@ export type Harness = {
    *  post settles, so a case reads it after awaiting the turn the post resolves on. */
   /** Every route a frame actually reached the page with, in the order they landed. */
   routeDeliveries: () => readonly BridgeInitRoute[]
+  /** Every clear the page asked for, in order. */
+  routeParamClears: () => readonly { param: string; value: string }[]
   routeRefusals: string[]
   pageFaults: BridgeErrorCapture[]
   frames: () => BridgeHostMessage[]
@@ -107,6 +109,7 @@ export function harness(
   let pageReadies = 0
   /** One entry per `ready` answered, saying whether an `init` actually went out for it. */
   const routeDeliveries: BridgeInitRoute[] = []
+  const routeParamClears: { param: string; value: string }[] = []
   const routeRefusals: string[] = []
   const pageFaults: BridgeErrorCapture[] = []
   const droppedBinaryFrames: number[] = []
@@ -131,6 +134,7 @@ export function harness(
       pageReadies += 1
     },
     onRouteDelivered: (route) => routeDeliveries.push(route),
+    onRouteParamClear: (param, value) => routeParamClears.push({ param, value }),
     onRouteRefused: (issue) => routeRefusals.push(issue),
     onNavigate: options.onNavigate ?? ((href) => navigations.push(href)),
     onExternalLink: (url) => externalLinks.push(url),
@@ -187,6 +191,7 @@ export function harness(
     storageWrites,
     pageReadyCount: () => pageReadies,
     routeDeliveries: () => routeDeliveries,
+    routeParamClears: () => routeParamClears,
     routeRefusals,
     pageFaults,
     frames,

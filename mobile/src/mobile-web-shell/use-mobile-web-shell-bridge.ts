@@ -6,6 +6,7 @@ import type {
 import { useHostClient } from '../transport/client-context'
 import { createBridgeDiagnosticReporter } from './bridge-diagnostic-log'
 import type { BridgeInitRoute } from './bridge/bridge-envelope'
+import type { BridgeClearableRouteParam } from './bridge/bridge-route-update'
 import type { BridgeHapticsKind } from './bridge/bridge-haptics-notify'
 import { createBridgeHost, type BridgeHost } from './bridge-host'
 import type { BridgeNavigateBackOutcome } from './bridge-host-contract'
@@ -98,6 +99,8 @@ export function useMobileWebShellBridge(args: {
   onPageReady: () => void
   /** A frame carrying that route reached the page, so a one-shot param on it may be spent. */
   onRouteDelivered: (route: BridgeInitRoute) => void
+  /** The page applied a one-shot route param and asks for it to be erased (ruling 34). */
+  onRouteParamClear: (param: BridgeClearableRouteParam, value: string) => void
   /** This shell named a screen the protocol does not allow, so no session is served. */
   onRouteRefused: (issue: string) => void
   /** Every screencast frame this host has dropped, so the shell can show the running total. */
@@ -136,6 +139,7 @@ export function useMobileWebShellBridge(args: {
   const pageFaultRef = useRef(args.onPageFault)
   const pageReadyRef = useRef(args.onPageReady)
   const routeDeliveredRef = useRef(args.onRouteDelivered)
+  const routeParamClearRef = useRef(args.onRouteParamClear)
   const routeRefusedRef = useRef(args.onRouteRefused)
   const binaryFramesDroppedRef = useRef(args.onBinaryFramesDropped)
   // Commit-phase and declared above the host's effect, so the host is built against what this
@@ -155,6 +159,7 @@ export function useMobileWebShellBridge(args: {
     pageFaultRef.current = args.onPageFault
     pageReadyRef.current = args.onPageReady
     routeDeliveredRef.current = args.onRouteDelivered
+    routeParamClearRef.current = args.onRouteParamClear
     routeRefusedRef.current = args.onRouteRefused
     binaryFramesDroppedRef.current = args.onBinaryFramesDropped
   }, [
@@ -167,6 +172,7 @@ export function useMobileWebShellBridge(args: {
     args.onPageFault,
     args.onPageReady,
     args.onRouteDelivered,
+    args.onRouteParamClear,
     args.onRouteRefused,
     args.onStorageWrite,
     args.readStorage,
@@ -201,6 +207,9 @@ export function useMobileWebShellBridge(args: {
       },
       onRouteDelivered: (delivered) => {
         routeDeliveredRef.current(delivered)
+      },
+      onRouteParamClear: (param, value) => {
+        routeParamClearRef.current(param, value)
       },
       onRouteRefused: (issue) => {
         routeRefusedRef.current(issue)

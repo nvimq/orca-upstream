@@ -11,6 +11,8 @@ type RouteDependencies = {
   lifecycle: string[]
   /** Every `onRouteDelivered` the screen was handed, so a case can spend a tap the way the page does. */
   deliver: ((route: { pathname: string; params?: Record<string, string> }) => void)[]
+  /** Every `onRouteParamClear` the screen was handed, so a case can erase the way the page does. */
+  clears: ((param: 'paneKey', value: string) => void)[]
   params: Record<string, string | string[] | undefined>
 }
 
@@ -20,6 +22,7 @@ const dependencies = vi.hoisted((): RouteDependencies => ({
   natives: 0,
   lifecycle: [],
   deliver: [],
+  clears: [],
   params: {}
 }))
 
@@ -55,10 +58,14 @@ vi.mock('./MobileWebShellScreen', async () => {
       hostId: string
       route: { pathname: string; params?: Record<string, string> }
       onRouteDelivered?: (route: { pathname: string; params?: Record<string, string> }) => void
+      onRouteParamClear?: (param: 'paneKey', value: string) => void
     }) => {
       dependencies.routes.push(props.route)
       if (props.onRouteDelivered) {
         dependencies.deliver.push(props.onRouteDelivered)
+      }
+      if (props.onRouteParamClear) {
+        dependencies.clears.push(props.onRouteParamClear)
       }
       // Empty deps on purpose: keyed on the pathname this would re-fire on a prop update and read
       // exactly like a remount, which is the one thing it exists to tell apart.
@@ -105,6 +112,7 @@ beforeEach(() => {
   dependencies.routes.length = 0
   dependencies.lifecycle.length = 0
   dependencies.deliver.length = 0
+  dependencies.clears.length = 0
   dependencies.natives = 0
   dependencies.params = { hostId: 'host-1', worktreeId: 'wt-1', name: 'my worktree' }
   Object.assign(globalThis, { __DEV__: true })
@@ -268,6 +276,40 @@ describe('the native session route that hands off to the shell', () => {
     await update(renderer)
     expect(dependencies.params.paneKey).toBe('')
     expect(dependencies.lifecycle).toEqual(['mount:/h/host-1/session/wt-1'])
+  })
+
+  /**
+   * The reader erases (ruling 34). The page applies a pane and asks for the param that carried it
+   * to go; this switch holds that param, so the comparison is here.
+   */
+  it('erases the pane param the page says it applied', async () => {
+    dependencies.params = { hostId: 'host-1', worktreeId: 'wt-1', paneKey: 'pane-1' }
+    const renderer = await renderSession()
+    await act(async () => {
+      dependencies.clears.at(-1)?.('paneKey', 'pane-1')
+    })
+    await update(renderer)
+    expect(dependencies.params.paneKey).toBe('')
+    expect(dependencies.lifecycle).toEqual(['mount:/h/host-1/session/wt-1'])
+  })
+
+  it('keeps a pane param a stale clear no longer names', async () => {
+    dependencies.params = { hostId: 'host-1', worktreeId: 'wt-1', paneKey: 'pane-1' }
+    const renderer = await renderSession()
+    // The tap moved on while the page was still applying the one before it.
+    dependencies.params = { ...dependencies.params, paneKey: 'pane-2' }
+    await update(renderer)
+    await act(async () => {
+      dependencies.clears.at(-1)?.('paneKey', 'pane-1')
+    })
+    await update(renderer)
+    expect(dependencies.params.paneKey).toBe('pane-2')
+    // And the pane it does name is spent when the page gets there.
+    await act(async () => {
+      dependencies.clears.at(-1)?.('paneKey', 'pane-2')
+    })
+    await update(renderer)
+    expect(dependencies.params.paneKey).toBe('')
   })
 
   it('hands a different pane to the mounted page with no remount', async () => {

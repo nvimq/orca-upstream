@@ -153,6 +153,7 @@ function Harness(props: {
     onPageFault: (error) => props.faults.push(error),
     onRouteRefused: () => {},
     onRouteDelivered: () => {},
+    onRouteParamClear: () => {},
     onBinaryFramesDropped: (total) => props.probe.droppedBinaryFrames.push(total),
     onPageReady: () => {
       props.readies.push(

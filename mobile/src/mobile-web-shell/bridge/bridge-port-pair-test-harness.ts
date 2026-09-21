@@ -55,6 +55,8 @@ export type BridgePortPair<TRpc extends RpcClient = FakeRpcClient> = {
   pageFaults: BridgeErrorCapture[]
   /** How many times the page asked for a session; it re-asks on a backoff until one lands. */
   readonly pageReadyCount: () => number
+  /** Every clear the page asked the shell for, in order. */
+  readonly routeParamClears: () => readonly { param: string; value: string }[]
   /** Why the host refused to open a session at all, if it did. */
   readonly routeRefusals: string[]
   /** Runs both lanes until a full round moves nothing. */
@@ -195,6 +197,7 @@ export function createBridgePortPair<TRpc extends RpcClient>(
   const storageWrites: { key: string; value: string | null }[] = []
   const pageFaults: BridgeErrorCapture[] = []
   let pageReadies = 0
+  const routeParamClears: { param: string; value: string }[] = []
   const routeRefusals: string[] = []
   let receiveOnPage: ((json: string) => void) | null = null
 
@@ -238,6 +241,7 @@ export function createBridgePortPair<TRpc extends RpcClient>(
       pageReadies += 1
     },
     onRouteDelivered: () => {},
+    onRouteParamClear: (param, value) => routeParamClears.push({ param, value }),
     onRouteRefused: (issue) => routeRefusals.push(issue),
     onDiagnostic: (diagnostic) => hostDiagnostics.push(diagnostic)
   })
@@ -272,6 +276,7 @@ export function createBridgePortPair<TRpc extends RpcClient>(
     storageWrites,
     pageFaults,
     pageReadyCount: () => pageReadies,
+    routeParamClears: () => routeParamClears,
     routeRefusals,
     async flush(): Promise<void> {
       for (let round = 0; round < 64; round += 1) {

@@ -22,6 +22,7 @@ import { bridgeNotifyRefusal } from './bridge/bridge-notify-grants'
 import { splitBridgeReply } from './bridge/bridge-reply-chunking'
 import { pageMayWriteStorageKey } from './page-storage-keys'
 import { createBridgeHostFrames } from './bridge-host-frames'
+import { BRIDGE_ROUTE_PARAM_CLEAR } from './bridge/bridge-route-update'
 import { createBridgeHostRoute } from './bridge-host-route'
 import type { BridgeHostOptions } from './bridge-host-contract'
 
@@ -162,6 +163,7 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
             ? { pageRouteGrants: parsedRouteGrants.data }
             : {}),
           granted,
+          accepts: [BRIDGE_ROUTE_PARAM_CLEAR],
           host,
           ...options.readStorage()
         })
@@ -278,6 +280,13 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
         // Local, and the only notify the shell answers with hardware. Nothing crosses back, which
         // is the whole reason this is a notify: a reply would spend an in-flight slot per row tap.
         options.onHaptic(message.kind)
+        return
+      }
+      if (message.name === BRIDGE_ROUTE_PARAM_CLEAR) {
+        // Local, and the one frame that writes to the shell's own route (ruling 34). Carried up
+        // rather than acted on here: the param lives on the native route the switch holds, and
+        // whether this still names it is that holder's comparison to make.
+        options.onRouteParamClear(message.param, message.value)
         return
       }
       client.updateTerminalSubscriptionViewport(message.terminal, {

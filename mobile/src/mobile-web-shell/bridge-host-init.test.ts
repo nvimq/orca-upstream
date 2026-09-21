@@ -7,6 +7,7 @@ import {
   BRIDGE_MAX_SUBSCRIPTIONS
 } from './bridge/bridge-caps'
 import { BRIDGE_FAULT_GRANT } from './bridge/bridge-envelope'
+import { BRIDGE_ROUTE_PARAM_CLEAR } from './bridge/bridge-route-update'
 
 describe('init and state', () => {
   it('answers ready with the getters, the caps it enforces, and the grants it honours', () => {
@@ -24,6 +25,8 @@ describe('init and state', () => {
       type: 'init',
       sessionId: 'session-a',
       buildId: 'build-a',
+      // What this shell takes from the page, which is the page's own check before it posts one.
+      accepts: [BRIDGE_ROUTE_PARAM_CLEAR],
       connection: {
         state: 'reconnecting',
         reconnectAttempt: 3,

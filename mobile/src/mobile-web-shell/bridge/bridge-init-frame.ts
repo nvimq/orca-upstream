@@ -39,6 +39,8 @@ export function createBridgeInitFrame(args: {
   pageRouteGrants?: readonly { pathname: string; grants: readonly string[] }[]
   /** What this session may do: the protocol's own grant plus what its route declared. */
   granted: readonly string[]
+  /** What this shell takes from the page beyond the frames every shell has taken (ruling 34). */
+  accepts?: readonly string[]
   /** The host the page is showing, minus the credential the bridge already carries for it. */
   host: BridgeInitHost
   /** The allowlisted keys as the app holds them right now. */
@@ -65,6 +67,11 @@ export function createBridgeInitFrame(args: {
     },
     route: args.route,
     pageRoutes: [...args.pageRoutes],
+    // Omitted when empty for the reason `storageOversize` is: a shell that declares nothing and
+    // one that declares an empty list are the same answer to the page's check.
+    ...(args.accepts === undefined || args.accepts.length === 0
+      ? {}
+      : { accepts: [...args.accepts] }),
     // Copied entry by entry for the reason the grants are: nothing the shell keeps may be
     // reachable through a frame it hands out.
     ...(args.pageRouteGrants === undefined

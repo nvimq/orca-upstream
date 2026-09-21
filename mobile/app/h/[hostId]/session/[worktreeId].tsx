@@ -60,6 +60,19 @@ export default function MobileSessionScreen() {
     },
     [paneKey, router]
   )
+  // The reader erasing its own request (ruling 34): the page applied a pane and names it back, and
+  // this is where the param it came on lives. Compared rather than obeyed — a tap that moved on
+  // while the page was applying the one before it leaves a newer key here, and that one is not
+  // spent yet.
+  const erasePaneKey = useCallback(
+    (param: 'paneKey', value: string) => {
+      if (param !== 'paneKey' || paneKey === '' || value !== paneKey) {
+        return
+      }
+      router.setParams({ paneKey: '' })
+    },
+    [paneKey, router]
+  )
 
   // Each omitted when empty, because the screen reads the difference: `created` is a one-shot flag
   // the create flow sets to `1`, `warning` is the host's own text, `name` is a label the screen
@@ -96,6 +109,7 @@ export default function MobileSessionScreen() {
       route={route}
       fallback={native}
       onRouteDelivered={clearPaneKey}
+      onRouteParamClear={erasePaneKey}
     />
   )
 }

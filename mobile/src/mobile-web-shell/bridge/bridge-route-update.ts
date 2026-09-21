@@ -1,4 +1,4 @@
-import { BridgeInitRouteSchema, type BridgeInitRoute } from './bridge-envelope'
+import { BridgeInitRouteSchema, type BridgeInitRoute } from './bridge-init-route'
 import { shellScreenRouteKey } from '../shell-screen-route'
 
 /**
@@ -16,6 +16,29 @@ import { shellScreenRouteKey } from '../shell-screen-route'
  * where it is today. Both degrade to the repeat tap doing nothing, which is what it does now.
  */
 export const BRIDGE_ROUTE_UPDATE_ACCEPT = 'route-update'
+
+/**
+ * The one thing a shell can say it accepts, which is a page erasing a one-shot route param.
+ *
+ * The reader erases (ruling 34). A notification tap writes `paneKey` onto the native route, the
+ * shell re-sends `init` for as long as it holds one, and the page — having applied the pane — asks
+ * for it to be cleared, naming the value it applied. Nothing tracks delivery on either side: a
+ * frame that never arrived is repaired by the next `init`, and a clear naming a pane the tap has
+ * already moved past is refused by the comparison rather than by a sequence number.
+ *
+ * Declared in `init` rather than assumed, in the direction `ready.accepts` runs the other way. No
+ * shipped shell serves a page, so nothing needs negotiating today; the declaration is here so the
+ * page's check exists from the first version that can post one.
+ */
+export const BRIDGE_ROUTE_PARAM_CLEAR = 'route-param-clear'
+
+/**
+ * The params a page may ask to have erased, closed on purpose: a page naming any param would be
+ * editing the shell's route rather than spending a request the shell handed it.
+ */
+export const BRIDGE_CLEARABLE_ROUTE_PARAMS = ['paneKey'] as const
+
+export type BridgeClearableRouteParam = (typeof BRIDGE_CLEARABLE_ROUTE_PARAMS)[number]
 
 /**
  * Whether two routes are different screens as the page experiences them.
