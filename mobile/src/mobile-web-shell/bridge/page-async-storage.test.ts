@@ -95,16 +95,26 @@ describe('a write the page makes', () => {
     await expect(pageAsyncStorage.getItem('orca:mobileWebShellEnabled')).resolves.toBeNull()
   })
 
-  it('carries each pair of a multi-write separately, and drops the ones outside the list', async () => {
+  it('carries each pair of a multi-write up to the first it cannot, and no further', async () => {
     await expect(
       pageAsyncStorage.multiSet([
         ['orca:pins:host-1', '["wt-1"]'],
         ['orca:remotePushHostRegistrations', '{}']
       ])
     ).resolves.toBeUndefined()
-    // The pair it could apply is applied: a batch that dropped the good half as well would lose a
-    // write nothing was wrong with.
+    // Everything before the refusal is applied, and the refusal is where the batch ends: one call
+    // with one answer (ruling 35), rather than a promise describing a half-applied batch.
     expect(writes).toEqual([{ key: 'orca:pins:host-1', value: '["wt-1"]' }])
+  })
+
+  it('stops a multi-write at a refused first pair rather than applying the rest behind it', async () => {
+    await expect(
+      pageAsyncStorage.multiSet([
+        ['orca:remotePushHostRegistrations', '{}'],
+        ['orca:pins:host-1', '["wt-1"]']
+      ])
+    ).resolves.toBeUndefined()
+    expect(writes).toEqual([])
   })
 
   it('never empties the app store, which is not this document to empty', async () => {

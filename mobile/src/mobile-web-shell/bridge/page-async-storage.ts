@@ -147,18 +147,24 @@ function settle(key: string, refusal: PageStorageRefusal | null): Promise<void> 
   return error === null ? Promise.resolve() : Promise.reject(error)
 }
 
-/** The first refusal of a batch, after every pair that could be applied has been. Every dropped
- *  pair is logged as it is read; only an oversize one can reject, and it does so after the rest —
- *  once, because the later ones are errors nobody turned into a promise. */
-function settleBatch(refusals: { key: string; refusal: PageStorageRefusal }[]): Promise<void> {
-  let rejection: PageStorageRefusedError | null = null
-  for (const entry of refusals) {
-    const error = refusalError(entry.key, entry.refusal)
-    if (error !== null && rejection === null) {
-      rejection = error
+/**
+ * A batch is one call with one answer, so it stops where it cannot go on: every pair before the
+ * refusal is applied, the refusal is the answer, and nothing after it is attempted (ruling 35).
+ *
+ * What this replaces collected a refusal per pair, logged each, and rejected with the first that
+ * could reject while the rest of the batch went in anyway — one promise describing a call where
+ * some pairs landed and some did not, which is the thing a caller cannot act on. No page-closure
+ * writer calls `multiSet` or `multiRemove` today, so this is the rule for whoever writes the
+ * first one rather than a change to anybody's behaviour.
+ */
+function applyBatch(pairs: readonly (readonly [string, string | null])[]): Promise<void> {
+  for (const [key, value] of pairs) {
+    const refusal = accept(key, value)
+    if (refusal !== null) {
+      return settle(key, refusal)
     }
   }
-  return rejection === null ? Promise.resolve() : Promise.reject(rejection)
+  return Promise.resolve()
 }
 
 const pageAsyncStorage = {
@@ -167,26 +173,9 @@ const pageAsyncStorage = {
   removeItem: (key: string): Promise<void> => settle(key, accept(key, null)),
   multiGet: (keys: readonly string[]): Promise<[string, string | null][]> =>
     Promise.resolve(keys.map((key) => [key, values.get(key) ?? null])),
-  multiSet: (pairs: readonly [string, string][]): Promise<void> => {
-    const refusals = []
-    for (const [key, value] of pairs) {
-      const refusal = accept(key, value)
-      if (refusal !== null) {
-        refusals.push({ key, refusal })
-      }
-    }
-    return settleBatch(refusals)
-  },
-  multiRemove: (keys: readonly string[]): Promise<void> => {
-    const refusals = []
-    for (const key of keys) {
-      const refusal = accept(key, null)
-      if (refusal !== null) {
-        refusals.push({ key, refusal })
-      }
-    }
-    return settleBatch(refusals)
-  },
+  multiSet: (pairs: readonly [string, string][]): Promise<void> => applyBatch(pairs),
+  multiRemove: (keys: readonly string[]): Promise<void> =>
+    applyBatch(keys.map((key) => [key, null] as const)),
   getAllKeys: (): Promise<string[]> => Promise.resolve([...values.keys()]),
   // The app's store is not this document's to empty, and no screen in the page closure calls it.
   clear: (): Promise<void> => Promise.resolve()
