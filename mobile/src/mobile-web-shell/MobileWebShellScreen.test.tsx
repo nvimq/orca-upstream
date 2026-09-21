@@ -204,7 +204,11 @@ vi.mock('./use-mobile-web-shell-session', () => ({
 }))
 
 import { clientFrame, createFakeRpcClient } from './bridge-host-test-fakes'
-import { BRIDGE_FAULT_GRANT, BRIDGE_NAVIGATE_BACK_NOTIFY } from './bridge/bridge-envelope'
+import {
+  BRIDGE_FAULT_GRANT,
+  BRIDGE_NAVIGATE_BACK_NOTIFY,
+  readBridgeHostMessage
+} from './bridge/bridge-envelope'
 import { BRIDGE_ROUTE_UPDATE_ACCEPT } from './bridge/bridge-route-update'
 import { MobileWebShellScreen } from './MobileWebShellScreen'
 
@@ -492,13 +496,12 @@ describe('the hybrid shell screen', () => {
     mounted.push(tree)
     return {
       tree,
+      // Read with the page's own reader rather than parsed loose: a frame this refuses is one the
+      // page would have refused too, and a case counting inits must not count one of those.
       initRoutes: () =>
         dependencies.posted
-          .map(
-            (json) =>
-              JSON.parse(json) as { type: string; route?: { params?: Record<string, string> } }
-          )
-          .filter((frame) => frame.type === 'init')
+          .map((json) => readBridgeHostMessage(json))
+          .flatMap((read) => (read.ok && read.message.type === 'init' ? [read.message] : []))
           .map((frame) => frame.route?.params),
       move: async (next) => {
         await act(async () => {
