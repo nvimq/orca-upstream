@@ -125,21 +125,20 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
   }
 
   /**
-   * Posts `init` and answers whether the page received it.
+   * Posts `init`, and answers nothing (ruling 34).
    *
-   * Answered every time it is asked, with the keys read every time it is answered. A page that saw
-   * a `state` older than the one it holds recovers by asking again rather than by living with a
+   * Sent every time it is asked for, with the keys read every time it is sent. A page that saw a
+   * `state` older than the one it holds recovers by asking again rather than by living with a
    * cache it knows is wrong, and the same is true of its storage: a document that reloads inside
    * one mount — which the fault path produces — would otherwise be primed from before its own
    * writes, and `publishPageStorage` clears the page's cache to match.
    *
-   * The frame is still built synchronously, because the page refuses every member until `init`
-   * lands and the golden recorder mounts its screen in the same turn it drains one; a frame whose
-   * contents waited on a promise would change what the first render of every replay sees. What is
-   * awaited is only the post, and only by a caller that spends something on delivery.
+   * The frame is built synchronously, because the page refuses every member until `init` lands and
+   * the golden recorder mounts its screen in the same turn it drains one; a frame whose contents
+   * waited on a promise would change what the first render of every replay sees.
    *
-   * False for a refused route, which is answered with nothing, and false for a frame the view
-   * would not take.
+   * A refused route sends nothing at all, and a post the view would not take is one diagnostic and
+   * no further attempt: nothing here holds a frame, and nothing retries one.
    */
   function sendInit(): void {
     const route = routes.current()
