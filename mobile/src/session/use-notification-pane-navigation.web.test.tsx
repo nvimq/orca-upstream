@@ -10,7 +10,9 @@ const bridge = vi.hoisted(() => {
   const held: {
     route: BridgeInitRoute | null
     listeners: RouteUpdateListener[]
-  } = { route: null, listeners: [] }
+    /** Every erase the page asked the shell for, in order (ruling 34). */
+    cleared: { param: string; value: string }[]
+  } = { route: null, listeners: [], cleared: [] }
   return held
 })
 
@@ -22,6 +24,10 @@ vi.mock('../transport/client-context.web', () => ({
       return () => {
         bridge.listeners = bridge.listeners.filter((held) => held !== listener)
       }
+    },
+    clearRouteParam: (param: string, value: string) => {
+      bridge.cleared.push({ param, value })
+      return true
     }
   })
 }))
@@ -87,6 +93,7 @@ function deliver(paneKey: string): void {
 beforeEach(() => {
   bridge.route = null
   bridge.listeners = []
+  bridge.cleared.length = 0
   switched.length = 0
 })
 
@@ -116,13 +123,47 @@ describe('the page pane hook', () => {
     expect(switched.map((tab) => tab.id)).toEqual(['second'])
   })
 
+  it('erases the param that carried the pane it applied', () => {
+    // The reader erases (ruling 34). The shell holds the request until the page that applied it
+    // says so, naming the value: a tap that moved on since leaves a newer one on the route, and
+    // the shell refuses this by comparison rather than by a sequence number.
+    bridge.route = { pathname: '/h/host-1/session/wt-1', params: { paneKey: `tab-b:${LEAF}` } }
+    render(true)
+    expect(bridge.cleared).toEqual([{ param: 'paneKey', value: `tab-b:${LEAF}` }])
+  })
+
   it('switches again for a repeat tap on the pane already showing', () => {
-    // The counter is why: the route is the one this hook last acted on, so a listener that
-    // compared values would read the second tap as nothing having changed.
+    // The clear between the two is what makes the second a request rather than a repetition: the
+    // shell erases the param, re-sends the route without it, and the tap writes it back.
+    render(true)
+    deliver(`tab-a:${LEAF}`)
+    deliver('')
+    deliver(`tab-a:${LEAF}`)
+    expect(switched.map((tab) => tab.id)).toEqual(['first', 'first'])
+    expect(bridge.cleared).toEqual([
+      { param: 'paneKey', value: `tab-a:${LEAF}` },
+      { param: 'paneKey', value: `tab-a:${LEAF}` }
+    ])
+  })
+
+  it('applies one pane once however many inits carry it', () => {
+    // A re-asked `ready` is answered with the route the shell holds, which is still this one while
+    // the clear is in flight or was lost. Applying is a no-op the second time; asking again is not,
+    // because a clear that never arrived is repaired by this.
     render(true)
     deliver(`tab-a:${LEAF}`)
     deliver(`tab-a:${LEAF}`)
-    expect(switched.map((tab) => tab.id)).toEqual(['first', 'first'])
+    expect(switched.map((tab) => tab.id)).toEqual(['first'])
+    expect(bridge.cleared).toHaveLength(2)
+  })
+
+  it('takes the tap that arrived while it was applying the one before it', () => {
+    render(true)
+    deliver(`tab-a:${LEAF}`)
+    deliver(`tab-b:${LEAF}`)
+    expect(switched.map((tab) => tab.id)).toEqual(['first', 'second'])
+    // Both are named back; the shell spends only the one its param still holds.
+    expect(bridge.cleared.map((entry) => entry.value)).toEqual([`tab-a:${LEAF}`, `tab-b:${LEAF}`])
   })
 
   it('takes a different pane as its own request', () => {
@@ -132,13 +173,15 @@ describe('the page pane hook', () => {
     expect(switched.map((tab) => tab.id)).toEqual(['first', 'second'])
   })
 
-  it('ignores the clear the shell posts after each delivery', () => {
-    // Load-bearing rather than defensive: the shell clears the native param once the page has the
-    // route, and that clear is itself a route that moved.
+  it('asks for nothing and applies nothing when the route carries no pane', () => {
+    // Load-bearing rather than defensive: the shell's own erase comes back as a route that moved,
+    // and so does every `ready` answered after it.
     render(true)
     deliver(`tab-a:${LEAF}`)
+    bridge.cleared.length = 0
     deliver('')
     expect(switched.map((tab) => tab.id)).toEqual(['first'])
+    expect(bridge.cleared).toEqual([])
   })
 
   it('consumes a request for a pane that has since closed, so no later render serves it', () => {

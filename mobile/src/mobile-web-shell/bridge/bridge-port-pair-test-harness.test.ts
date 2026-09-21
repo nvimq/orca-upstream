@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { RpcClient } from '../../transport/rpc-client'
 import type { RpcResponse } from '../../transport/types'
 import { createBridgePortPair, createFakeBridgePortPair } from './bridge-port-pair-test-harness'
+import { BRIDGE_ROUTE_PARAM_CLEAR } from './bridge-route-update'
 
 /** Every member of the contract, none of them a fake anything: the pair must carry a plain client. */
 function plainShellClient(record: string[]): RpcClient {
@@ -40,7 +41,8 @@ describe('the bridge port pair', () => {
       pageRouteGrants: null,
       host: expect.objectContaining({ id: expect.any(String) }),
       storage: expect.any(Object),
-      storageOversize: []
+      storageOversize: [],
+      accepts: [BRIDGE_ROUTE_PARAM_CLEAR]
     })
   })
 

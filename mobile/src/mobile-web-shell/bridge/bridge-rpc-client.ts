@@ -26,7 +26,12 @@ import { createBridgeClientNotifications } from './bridge-client-notifications'
 import { BridgeClientRequests } from './bridge-client-requests'
 import { BridgeClientSubscriptions } from './bridge-client-subscriptions'
 import { isBridgeNativeMethod, type BridgeNativeVerb } from './bridge-native-verbs'
-import { BRIDGE_ROUTE_UPDATE_ACCEPT, bridgeRouteMoved } from './bridge-route-update'
+import {
+  BRIDGE_ROUTE_PARAM_CLEAR,
+  BRIDGE_ROUTE_UPDATE_ACCEPT,
+  bridgeRouteMoved,
+  type BridgeClearableRouteParam
+} from './bridge-route-update'
 import {
   BRIDGE_PROTOCOL_VERSION,
   type BridgeClientMessage,
@@ -117,6 +122,16 @@ export type BridgeRpcClient = RpcClient & {
    * once will not say itself on a retry, and the shell's own load state is the other way it finds out.
    */
   notifyPageFault: (error: unknown) => boolean
+  /**
+   * Erases a one-shot route param the shell handed this page, naming the value the page applied
+   * (ruling 34). The reader erases: the shell tracks no delivery, so a request stays on the route
+   * and keeps arriving until the page that applied it says so.
+   *
+   * False when this shell never declared it takes one, which is every shell older than the field.
+   * Nothing is owed the caller either way — a clear that did not leave is repaired by the request
+   * arriving again, which is the same path a lost frame takes.
+   */
+  clearRouteParam: (param: BridgeClearableRouteParam, value: string) => boolean
 }
 
 /**
@@ -451,6 +466,16 @@ export function createBridgeRpcClient(options: BridgeRpcClientOptions): BridgeRp
         routeUpdateListeners.delete(listener)
       }
     },
-    getShellSession: () => session
+    getShellSession: () => session,
+    clearRouteParam: (param, value) =>
+      session !== null &&
+      session.accepts.includes(BRIDGE_ROUTE_PARAM_CLEAR) &&
+      posted({
+        v: BRIDGE_PROTOCOL_VERSION,
+        type: 'notify',
+        name: BRIDGE_ROUTE_PARAM_CLEAR,
+        param,
+        value
+      })
   }
 }

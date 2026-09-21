@@ -134,7 +134,10 @@ describe('bridge client handshake', () => {
       // And no host and no stored keys, which is what `host-store.web.ts` then answers with.
       host: null,
       storage: {},
-      storageOversize: []
+      storageOversize: [],
+      // And one that takes nothing from the page beyond the frames every shell has taken, which
+      // is what stops the page posting an erase it would refuse whole (ruling 34).
+      accepts: []
     })
   })
 
