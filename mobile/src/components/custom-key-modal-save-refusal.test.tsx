@@ -53,6 +53,14 @@ vi.mock('lucide-react-native', () => ({ ChevronLeft: hosts.View }))
 vi.mock('./BottomDrawer', () => ({ BottomDrawer: hosts.View }))
 
 import { CustomKeyModal } from './CustomKeyModal'
+import { readMirroredStorage } from '../storage/mirrored-storage-keys'
+
+const CUSTOM_KEYS = 'orca:custom-accessory-keys'
+
+/** What a later `init` would carry for this key, which is the map and not the store. */
+function mirrored(): string | undefined {
+  return readMirroredStorage([CUSTOM_KEYS])[CUSTOM_KEYS]
+}
 
 /** The one label a node renders, flattened, without walking a fiber into a cycle. */
 function labelOf(node: { props: { children?: unknown } }): string {
@@ -117,6 +125,7 @@ beforeEach(() => {
 describe('adding a custom key when the store refuses the write', () => {
   it('does not let the refusal escape as an unhandled rejection', async () => {
     store.refuse = true
+    const before = mirrored()
     const unhandled = vi.fn()
     process.on('unhandledRejection', unhandled)
     const onKeysChanged = vi.fn()
@@ -140,6 +149,10 @@ describe('adding a custom key when the store refuses the write', () => {
     // is the failure the allowlist exists to avoid.
     expect(onKeysChanged).not.toHaveBeenCalled()
     expect(onClose).not.toHaveBeenCalled()
+    // And the mirror is back where it started. `saveCustomKeys` notes the write before it
+    // persists, because a reader is answered from the map; a refused write that left the note
+    // standing would put the key the store rejected into the next `init`.
+    expect(mirrored()).toBe(before)
   })
 
   it('reports the key and closes when the store takes it, so the case above is the refusal', async () => {
