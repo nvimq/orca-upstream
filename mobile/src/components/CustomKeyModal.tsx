@@ -111,7 +111,20 @@ export function CustomKeyModal({ visible, onClose, onKeysChanged, onManageShortc
       const existing = await loadCustomKeys()
       const newKey: CustomKey = { ...key, id: `custom-${Date.now()}` }
       const updated = [...existing, newKey]
-      await saveCustomKeys(updated)
+      // Caught here because both callers are `void addKey(...)`, which leaves a rejection nowhere
+      // to go. On the page this key is allowlisted and its write rejects for size — the contract
+      // `page-async-storage` states, and the one ruling 33.6 extends to a key `init` could not
+      // carry at all — so an uncaught save here reaches the document's unhandled-rejection
+      // handler, which reports a page fault and drops the generation for a key nobody could add.
+      // Every other allowlisted writer in this closure already catches its own save.
+      try {
+        await saveCustomKeys(updated)
+      } catch (error) {
+        // Neither reported nor closed: a drawer that dismissed itself and announced the key would
+        // put a row on the accessory bar that no store holds and the next load would not have.
+        console.warn('[custom-keys] the store would not take this key', error)
+        return
+      }
       onKeysChanged(updated)
       onClose()
     },
