@@ -6,6 +6,7 @@ import type { BridgeHapticsKind } from './bridge/bridge-haptics-notify'
 import type { BridgeErrorCapture } from './bridge/bridge-error-capture'
 import type { BridgeNativeVerb } from './bridge/bridge-native-verbs'
 import type { BridgeNotifyRefusal } from './bridge/bridge-notify-grants'
+import type { PageStorageForInit } from './page-storage-keys'
 
 /**
  * What the shell did with a `navigate-back`. Only `popped` moved the stack, and the other two are
@@ -120,7 +121,7 @@ export type BridgeHostOptions = {
    * mount: a document that reloads inside one mount has to be primed from after its own writes.
    * Synchronous, because `init` is — see `sendInit`.
    */
-  readStorage: () => Readonly<Record<string, string>>
+  readStorage: () => PageStorageForInit
   /** One allowlisted key written, or removed when the value is null. */
   onStorageWrite: (key: string, value: string | null) => void
   /**

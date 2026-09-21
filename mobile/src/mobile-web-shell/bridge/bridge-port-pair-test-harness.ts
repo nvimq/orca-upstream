@@ -79,6 +79,8 @@ export type BridgePortPairOptions<TRpc extends RpcClient> = {
   route?: BridgeInitRoute
   pageRoutes?: readonly string[]
   storage?: Readonly<Record<string, string>>
+  /** The allowlisted keys the app holds a value for that is over the page's cap (ruling 33.6). */
+  storageOversize?: readonly string[]
   /**
    * Rewrites each frame on its way to the page, for asking the page a counterfactual it cannot be
    * asked any other way: would this run have gone differently had the shell sent one more field?
@@ -226,7 +228,10 @@ export function createBridgePortPair<TRpc extends RpcClient>(
       return 'popped'
     },
     host: { id: 'host-a', name: 'Host A', endpoint: 'ws://host-a', lastConnected: 0 },
-    readStorage: () => options.storage ?? {},
+    readStorage: () => ({
+      storage: options.storage ?? {},
+      storageOversize: options.storageOversize ?? []
+    }),
     onStorageWrite: (key, value) => storageWrites.push({ key, value }),
     onPageFault: (error) => pageFaults.push(error),
     onPageReady: () => {

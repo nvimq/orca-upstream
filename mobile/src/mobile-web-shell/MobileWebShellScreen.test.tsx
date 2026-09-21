@@ -159,7 +159,7 @@ vi.mock('./use-page-host-snapshot', () => ({
     // down and rebuilt on every render of this screen — and every pending request settled with it.
     snapshot: SNAPSHOT,
     unreadable: dependencies.snapshotUnreadable,
-    readStorage: () => ({}),
+    readStorage: () => ({ storage: {}, storageOversize: [] }),
     refreshStorage: () => {
       dependencies.storageRefreshes += 1
     },

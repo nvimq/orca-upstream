@@ -27,6 +27,9 @@ export type BridgeShellSession = {
   host: BridgeInitHost | null
   /** The allowlisted keys as the app held them when this page opened. */
   storage: Readonly<Record<string, string>>
+  /** The allowlisted keys `storage` could not carry because the app's value is over the page's cap
+   *  (ruling 33.6). Empty for a shell too old to name them, which is what it was before. */
+  storageOversize: readonly string[]
 }
 
 /**
@@ -46,6 +49,7 @@ export function readShellSession(
     pageRoutes: message.pageRoutes ?? [],
     pageRouteGrants: message.pageRouteGrants ?? null,
     host: message.host ?? null,
-    storage: message.storage ?? {}
+    storage: message.storage ?? {},
+    storageOversize: message.storageOversize ?? []
   }
 }

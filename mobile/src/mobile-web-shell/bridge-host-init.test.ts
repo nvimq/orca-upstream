@@ -252,7 +252,9 @@ describe('init and state', () => {
 
   it('reads the keys again for each init, rather than replaying what it started with', () => {
     let pins = '["one"]'
-    const bridge = harness({ readStorage: () => ({ 'orca:pins:host-a': pins }) })
+    const bridge = harness({
+      readStorage: () => ({ storage: { 'orca:pins:host-a': pins }, storageOversize: [] })
+    })
     bridge.host.receive(clientFrame({ type: 'ready' }))
     pins = '["one","two"]'
     // The document that reloads inside one mount asks again, and has to be primed from after its

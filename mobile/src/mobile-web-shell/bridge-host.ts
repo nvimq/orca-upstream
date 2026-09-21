@@ -182,7 +182,7 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
         ...(parsedRouteGrants?.success === true ? { pageRouteGrants: parsedRouteGrants.data } : {}),
         granted,
         host,
-        storage: options.readStorage()
+        ...options.readStorage()
       })
     )
   }

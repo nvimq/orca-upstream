@@ -164,15 +164,17 @@ describe('what init may carry', () => {
 
   it('keeps a value of exactly the bound, so the drop above discriminates', () => {
     const at = { 'orca:custom-accessory-keys': 'x'.repeat(PAGE_STORAGE_MAX_VALUE_CHARS) }
-    expect(pageStorageEntriesForInit(at)).toEqual({ entries: at, dropped: [] })
+    expect(pageStorageEntriesForInit(at)).toEqual({ entries: at, dropped: [], oversize: [] })
   })
 
   it('never carries more entries than the schema admits', () => {
     const held = Object.fromEntries(
       Array.from({ length: PAGE_STORAGE_MAX_ENTRIES + 4 }, (_, index) => [`k${String(index)}`, 'v'])
     )
-    const { entries, dropped } = pageStorageEntriesForInit(held)
+    const { entries, dropped, oversize } = pageStorageEntriesForInit(held)
     expect(Object.keys(entries)).toHaveLength(PAGE_STORAGE_MAX_ENTRIES)
     expect(dropped).toHaveLength(4)
+    // Room, not size: the page may write any of these four itself, so none is refused (33.6).
+    expect(oversize).toEqual([])
   })
 })

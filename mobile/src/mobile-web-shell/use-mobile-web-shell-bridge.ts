@@ -13,6 +13,7 @@ import type { BridgeNativeVerb } from './bridge/bridge-native-verbs'
 import type { BridgeErrorCapture } from './bridge/bridge-error-capture'
 import type { MobileWebShellSessionState } from './mobile-web-shell-session-contract'
 import type { PageHostSnapshot } from './use-page-host-snapshot'
+import type { PageStorageForInit } from './page-storage-keys'
 
 class BridgeViewGoneError extends Error {
   constructor() {
@@ -89,7 +90,7 @@ export function useMobileWebShellBridge(args: {
    */
   snapshot: PageHostSnapshot | null
   /** The allowlisted keys as the app holds them, asked for on each `init` rather than at mount. */
-  readStorage: () => Readonly<Record<string, string>>
+  readStorage: () => PageStorageForInit
   onStorageWrite: (key: string, value: string | null) => void
   /** The page could not render the generation on screen. Reported, never recovered from here. */
   onPageFault: (error: BridgeErrorCapture) => void

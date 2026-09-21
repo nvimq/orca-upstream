@@ -25,7 +25,8 @@ vi.mock('@react-native-async-storage/async-storage', async () => ({
 }))
 
 const { publishPageStorage } = await import('../mobile-web-shell/bridge/page-async-storage')
-const { PAGE_STORAGE_MAX_VALUE_CHARS } = await import('../mobile-web-shell/page-storage-keys')
+const { PAGE_STORAGE_MAX_VALUE_CHARS, pageStorageEntriesForInit } =
+  await import('../mobile-web-shell/page-storage-keys')
 const {
   getOrCreateMobileStructuredSendOperation,
   resetMobileStructuredSendOperationJournalForTests
@@ -59,8 +60,16 @@ function storedJournal(count: number): string {
 
 const posted: { key: string; value: string | null }[] = []
 
-function publish(entries: Record<string, string>): void {
+/**
+ * The page seated the way the shell seats it, rather than from a hand-written record.
+ *
+ * `pageStorageEntriesForInit` is the split the shell runs before `init` is built, so driving the
+ * page through it is what makes these states ones production can reach: a journal over the cap
+ * never arrives as a value, it arrives as a name on the oversize list.
+ */
+function publishAsTheShellWould(held: Record<string, string>): void {
   posted.length = 0
+  const { entries, oversize } = pageStorageEntriesForInit(held)
   publishPageStorage(
     entries,
     (key, value) => {
@@ -68,8 +77,13 @@ function publish(entries: Record<string, string>): void {
       return true
     },
     HOST_ID,
-    SESSION_ROUTE
+    SESSION_ROUTE,
+    oversize
   )
+}
+
+function publish(entries: Record<string, string>): void {
+  publishAsTheShellWould(entries)
 }
 
 function claim() {
@@ -88,17 +102,36 @@ beforeEach(() => {
 })
 
 describe('the durable send journal against the page store', () => {
-  it('rejects rather than answering with an id the store never took', async () => {
-    const held = storedJournal(ENTRIES_OVER_THE_CAP)
-    // The measurement this case is written on, asserted rather than assumed: the journal is over
-    // the page's bound at 48 entries, and one fewer is under it.
-    expect(held.length).toBeGreaterThan(PAGE_STORAGE_MAX_VALUE_CHARS)
-    expect(storedJournal(ENTRIES_OVER_THE_CAP - 1).length).toBeLessThanOrEqual(
-      PAGE_STORAGE_MAX_VALUE_CHARS
-    )
-    publish({ [JOURNAL]: held })
+  it('rejects the send that would take the journal past what the page may write', async () => {
+    // The real precondition, seated through the shell's own split: 47 entries fit, so `init`
+    // carries them and the page holds a journal it can read. The 48th is the one that does not.
+    const held = storedJournal(ENTRIES_OVER_THE_CAP - 1)
+    expect(held.length).toBeLessThanOrEqual(PAGE_STORAGE_MAX_VALUE_CHARS)
+    expect(storedJournal(ENTRIES_OVER_THE_CAP).length).toBeGreaterThan(PAGE_STORAGE_MAX_VALUE_CHARS)
+    publishAsTheShellWould({ [JOURNAL]: held })
     await expect(claim()).rejects.toThrow(/could not save/)
     // Nothing posted either: the value the wire would have dropped never left the page.
+    expect(posted).toEqual([])
+  })
+
+  /**
+   * The destructive one (ruling 33.6).
+   *
+   * A native journal past the cap is dropped from `init` for size, and the key stays in
+   * `pageStorageKeysForRoute`. Without the oversize list the page reads `null`, `parseJournal`
+   * answers an empty journal, and the first send writes a one-entry value over the device's — the
+   * native entries gone and a fresh `operationId` for an operation native already holds, which is
+   * the duplicate send ruling 7 exists to prevent.
+   */
+  it('refuses a send when init could not carry the journal, instead of replacing it', async () => {
+    const held = storedJournal(ENTRIES_OVER_THE_CAP)
+    const { entries, oversize } = pageStorageEntriesForInit({ [JOURNAL]: held })
+    // The precondition itself: the shell hands no value for this key and names it instead.
+    expect(entries).toEqual({})
+    expect(oversize).toEqual([JOURNAL])
+    publishAsTheShellWould({ [JOURNAL]: held })
+    await expect(claim()).rejects.toThrow(/could not save/)
+    // The half that makes it destructive: nothing was posted, so the native journal is untouched.
     expect(posted).toEqual([])
   })
 

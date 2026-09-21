@@ -384,6 +384,18 @@ const BridgeHostMessageSchema = z.union([
     route: BridgeInitRouteSchema.optional(),
     host: BridgeInitHostSchema.optional(),
     storage: BridgeInitStorageSchema.optional(),
+    /**
+     * The allowlisted keys the shell holds a value for that `storage` could not carry, because the
+     * app's value is over the page's own cap (ruling 33.6).
+     *
+     * Optional and additive: an older shell sends none and an older page ignores it, which is the
+     * behaviour before this field — the page writes the key and replaces what the device held.
+     * Bounded by the same count as the storage record, since it names a subset of the same keys.
+     */
+    storageOversize: z
+      .array(z.string().min(1).max(PAGE_STORAGE_MAX_KEY_CHARS).refine(isPageStorageKey))
+      .max(PAGE_STORAGE_MAX_ENTRIES)
+      .optional(),
     /** Every route pattern the shell would render from the page. The page keeps a navigation into
      *  one of them and hands the rest back, which is the only thing that tells it which is which. */
     pageRoutes: z

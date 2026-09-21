@@ -22,6 +22,7 @@ import {
 } from './bridge/bridge-envelope'
 import type { TerminalBacklogTimers } from './bridge-terminal-output-backlog'
 import type { BridgeErrorCapture } from './bridge/bridge-error-capture'
+import type { PageStorageForInit } from './page-storage-keys'
 
 export const ID = bridgeId(1)
 export const OTHER = bridgeId(2)
@@ -68,7 +69,7 @@ export function harness(
     onNavigateBack?: () => BridgeNavigateBackOutcome
     storage?: Readonly<Record<string, string>>
     /** For the suites that need the map to change between two `init` answers. */
-    readStorage?: () => Readonly<Record<string, string>>
+    readStorage?: () => PageStorageForInit
     onPageFault?: (error: BridgeErrorCapture) => void
     /**
      * Whether to answer a `ready` before the case runs, which is what a real page does first: the
@@ -117,7 +118,8 @@ export function harness(
     routeGrants: options.routeGrants ?? MOBILE_WEB_SHELL_GRANTS,
     sessionEstablished: options.sessionEstablished ?? false,
     host: HOST,
-    readStorage: options.readStorage ?? (() => options.storage ?? {}),
+    readStorage:
+      options.readStorage ?? (() => ({ storage: options.storage ?? {}, storageOversize: [] })),
     onStorageWrite: (key, value) => storageWrites.push({ key, value }),
     onPageReady: () => {
       pageReadies += 1

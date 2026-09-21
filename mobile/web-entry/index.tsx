@@ -92,7 +92,8 @@ bootstrapShellPage({
       session.storage,
       (key, value) => client.notifyStorageWrite(key, value),
       session.host?.id ?? '',
-      session.route?.pathname ?? ''
+      session.route?.pathname ?? '',
+      session.storageOversize
     )
     createRoot(container).render(
       // Above `ExpoRoot`, not inside its wrapper: a route this bundle cannot resolve or import

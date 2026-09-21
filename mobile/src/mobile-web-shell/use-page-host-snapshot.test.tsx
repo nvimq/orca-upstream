@@ -98,13 +98,13 @@ describe('what the shell puts on every init', () => {
   it('carries the write the page just made, not the map it was primed with', async () => {
     doubles.store.set(PINS, '["one"]')
     const mounted = await mount()
-    expect(mounted.view().readStorage()).toEqual({ [PINS]: '["one"]' })
+    expect(mounted.view().readStorage().storage).toEqual({ [PINS]: '["one"]' })
     // The device repro: the page writes, its document reloads inside this same mount, and the
     // `init` that primes the new document has to carry the write rather than what came before it.
     await act(async () => {
       mounted.view().writeStorage(PINS, '["one","two"]')
     })
-    expect(mounted.view().readStorage()).toEqual({ [PINS]: '["one","two"]' })
+    expect(mounted.view().readStorage().storage).toEqual({ [PINS]: '["one","two"]' })
     expect(doubles.writes).toEqual([{ key: PINS, value: '["one","two"]' }])
   })
 
@@ -114,18 +114,18 @@ describe('what the shell puts on every init', () => {
     await act(async () => {
       mounted.view().writeStorage(PINS, null)
     })
-    expect(mounted.view().readStorage()).toEqual({})
+    expect(mounted.view().readStorage().storage).toEqual({})
   })
 
   it('carries what the app wrote from its own screens on the next init, not the one after', async () => {
     const mounted = await mount()
-    expect(mounted.view().readStorage()).toEqual({})
+    expect(mounted.view().readStorage().storage).toEqual({})
     // The device repro: the session screen writes while the page is open, the document reloads,
     // and the `init` answering its ready is built from this map with no read in between. A mirror
     // only the store read refreshed would hand the drawer the repo the user left, an `init` late.
     writeLastVisitedWorktree({ hostId: 'host-1', worktreeId: 'host-1/repo/wt' })
     await savePinnedIds('host-1', new Set(['one']))
-    expect(mounted.view().readStorage()).toEqual({
+    expect(mounted.view().readStorage().storage).toEqual({
       [LAST_VISITED]: JSON.stringify({ hostId: 'host-1', worktreeId: 'host-1/repo/wt' }),
       [PINS]: '["one"]'
     })
@@ -143,17 +143,17 @@ describe('what the shell puts on every init', () => {
     })
     // The read was already behind the write when it answered, so putting it back would undo a pin
     // the page has been told is set.
-    expect(mounted.view().readStorage()).toEqual({ [PINS]: '["just-written"]' })
+    expect(mounted.view().readStorage().storage).toEqual({ [PINS]: '["just-written"]' })
   })
 
   it('picks up what the app changed underneath, on the next ask', async () => {
     const mounted = await mount()
-    expect(mounted.view().readStorage()).toEqual({})
+    expect(mounted.view().readStorage().storage).toEqual({})
     doubles.store.set(PINS, '["set-by-the-app"]')
     await act(async () => {
       mounted.view().refreshStorage()
     })
-    expect(mounted.view().readStorage()).toEqual({ [PINS]: '["set-by-the-app"]' })
+    expect(mounted.view().readStorage().storage).toEqual({ [PINS]: '["set-by-the-app"]' })
   })
 
   it('never carries another host key, whatever the store holds', async () => {
@@ -163,12 +163,12 @@ describe('what the shell puts on every init', () => {
     await act(async () => {
       mounted.view().refreshStorage()
     })
-    expect(mounted.view().readStorage()).toEqual({ [PINS]: '["mine"]' })
+    expect(mounted.view().readStorage().storage).toEqual({ [PINS]: '["mine"]' })
     // And a write for one is refused rather than mirrored, so a later read cannot answer with it.
     await act(async () => {
       mounted.view().writeStorage('orca:pins:host-2', '["theirs"]')
     })
-    expect(mounted.view().readStorage()).toEqual({ [PINS]: '["mine"]' })
+    expect(mounted.view().readStorage().storage).toEqual({ [PINS]: '["mine"]' })
   })
 
   it("carries the session route's own workspace, and never the workspace beside it", async () => {
@@ -178,11 +178,11 @@ describe('what the shell puts on every init', () => {
     await act(async () => {
       mounted.view().refreshStorage()
     })
-    expect(mounted.view().readStorage()).toEqual({ [CHAT_TABS]: '{"tab-1":"chat"}' })
+    expect(mounted.view().readStorage().storage).toEqual({ [CHAT_TABS]: '{"tab-1":"chat"}' })
     await act(async () => {
       mounted.view().writeStorage('orca:nativeChatTabs:host-1:wt-2', '{}')
     })
-    expect(mounted.view().readStorage()).toEqual({ [CHAT_TABS]: '{"tab-1":"chat"}' })
+    expect(mounted.view().readStorage().storage).toEqual({ [CHAT_TABS]: '{"tab-1":"chat"}' })
   })
 
   it('hands a route that names no workspace neither of the two, so the line above is the route', async () => {
@@ -191,7 +191,7 @@ describe('what the shell puts on every init', () => {
     await act(async () => {
       mounted.view().refreshStorage()
     })
-    expect(mounted.view().readStorage()).toEqual({})
+    expect(mounted.view().readStorage().storage).toEqual({})
   })
 
   it('leaves out a value the page would refuse the whole frame over, and says which', async () => {
@@ -207,7 +207,7 @@ describe('what the shell puts on every init', () => {
       await act(async () => {
         mounted.view().refreshStorage()
       })
-      expect(mounted.view().readStorage()).toEqual({ [PINS]: '["one"]' })
+      expect(mounted.view().readStorage().storage).toEqual({ [PINS]: '["one"]' })
     } finally {
       console.warn = warn
     }
@@ -221,7 +221,7 @@ describe('what the shell puts on every init', () => {
     await act(async () => {
       mounted.view().refreshStorage()
     })
-    expect(mounted.view().readStorage()).toEqual({ [JOURNAL]: atBound })
+    expect(mounted.view().readStorage().storage).toEqual({ [JOURNAL]: atBound })
   })
 })
 
@@ -238,7 +238,7 @@ describe('the host the page is handed', () => {
       releaseReads()
     })
     expect(mounted.view().snapshot?.host.id).toBe('host-1')
-    expect(mounted.view().readStorage()).toEqual({ [PINS]: '["one"]' })
+    expect(mounted.view().readStorage().storage).toEqual({ [PINS]: '["one"]' })
   })
 })
 

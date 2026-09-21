@@ -39,7 +39,8 @@ describe('the bridge port pair', () => {
       pageRoutes: expect.any(Array),
       pageRouteGrants: null,
       host: expect.objectContaining({ id: expect.any(String) }),
-      storage: expect.any(Object)
+      storage: expect.any(Object),
+      storageOversize: []
     })
   })
 

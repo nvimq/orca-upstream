@@ -43,6 +43,10 @@ export function createBridgeInitFrame(args: {
   host: BridgeInitHost
   /** The allowlisted keys as the app holds them right now. */
   storage: Readonly<Record<string, string>>
+  /** The allowlisted keys whose app-side value is over the page's cap, so `storage` has none
+   *  (ruling 33.6). The page refuses its own writes to these rather than replacing the device's.
+   *  Absent and empty are the same answer: nothing of the app's was left out. */
+  storageOversize?: readonly string[]
 }): Extract<BridgeHostMessage, { type: 'init' }> {
   return {
     v: BRIDGE_PROTOCOL_VERSION,
@@ -74,6 +78,11 @@ export function createBridgeInitFrame(args: {
     host: args.host,
     // Copied for the same reason the grants are: the frame is serialized straight after, and what
     // the shell holds must not be reachable through what it hands out.
-    storage: { ...args.storage }
+    storage: { ...args.storage },
+    // Omitted when empty rather than sent as `[]`: a field nobody sent and a field sent empty are
+    // the same answer, and every golden in the corpus was recorded without it.
+    ...(args.storageOversize === undefined || args.storageOversize.length === 0
+      ? {}
+      : { storageOversize: [...args.storageOversize] })
   }
 }

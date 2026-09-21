@@ -55,6 +55,14 @@ export class PageStorageRefusedError extends Error {
 
 const values = new Map<string, string>()
 let write: PageStorageWriter = () => false
+/**
+ * The allowlisted keys `init` could not carry because the app's value was over the page's cap.
+ *
+ * Writable by the allowlist and unwritable in fact (ruling 33.6): the page holds no value for one
+ * of these, so anything it writes replaces what the device has rather than extending it. Refused
+ * as `too-large`, which is the truth about the key and the one refusal the composer catches.
+ */
+let oversizeKeys: ReadonlySet<string> = new Set()
 /** The host this document was opened for; no key belonging to another one is writable. */
 let hostId = ''
 /** And the route, because two of the keys are scoped to the workspace the route names. */
@@ -65,9 +73,11 @@ export function publishPageStorage(
   entries: Readonly<Record<string, string>>,
   writer: PageStorageWriter,
   forHostId: string,
-  forRoutePathname: string
+  forRoutePathname: string,
+  forOversizeKeys: readonly string[] = []
 ): void {
   values.clear()
+  oversizeKeys = new Set(forOversizeKeys)
   for (const [key, value] of Object.entries(entries)) {
     values.set(key, value)
   }
@@ -90,6 +100,11 @@ function accept(key: string, value: string | null): PageStorageRefusal | null {
   // The envelope's own bound, imported rather than restated: without it an oversized value is
   // cached here and dropped on the wire, so the page reads back a write no other screen can see.
   if (value !== null && value.length > PAGE_STORAGE_MAX_VALUE_CHARS) {
+    return 'too-large'
+  }
+  // And the same refusal for a key whose app-side value was already over it: the page was handed
+  // nothing for this key, so any write it makes is a replacement rather than an edit.
+  if (oversizeKeys.has(key)) {
     return 'too-large'
   }
   if (!write(key, value)) {

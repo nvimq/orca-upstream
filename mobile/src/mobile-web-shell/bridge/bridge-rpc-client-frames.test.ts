@@ -133,7 +133,8 @@ describe('bridge client handshake', () => {
       pageRouteGrants: null,
       // And no host and no stored keys, which is what `host-store.web.ts` then answers with.
       host: null,
-      storage: {}
+      storage: {},
+      storageOversize: []
     })
   })
 

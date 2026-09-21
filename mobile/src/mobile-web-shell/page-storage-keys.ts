@@ -154,22 +154,41 @@ export function isPageStorageKeyForRoute(
  * session screen never opens at all. Dropping the key instead leaves the page reading a default,
  * which is what `dropped` is for: a degradation the caller can name rather than a page that does
  * not start.
+ *
+ * `oversize` is the half of `dropped` the page must be told about, and it is a correctness matter
+ * rather than a diagnostic one (ruling 33.6). A dropped key is still in
+ * `pageStorageKeysForRoute`, so the page may write it — and for the journal that is destructive:
+ * the page reads no journal, builds an empty one, and its first send writes a one-entry value over
+ * the device's, losing every native entry and issuing a fresh `operationId` for an operation
+ * native already holds. Named here, the page refuses the write instead. Only the value-cap drops
+ * qualify: an entry-cap drop is a key that fits and did not make the frame, and the page's own
+ * write of it is the same size the shell would have carried.
  */
+/** What `init` carries about the app's store: the values, and the keys it could not carry. */
+export type PageStorageForInit = {
+  storage: Readonly<Record<string, string>>
+  storageOversize: readonly string[]
+}
+
 export function pageStorageEntriesForInit(held: Readonly<Record<string, string>>): {
   entries: Record<string, string>
   dropped: string[]
+  oversize: string[]
 } {
   const entries: Record<string, string> = {}
   const dropped: string[] = []
+  const oversize: string[] = []
   for (const [key, value] of Object.entries(held)) {
-    if (
-      value.length > PAGE_STORAGE_MAX_VALUE_CHARS ||
-      Object.keys(entries).length >= PAGE_STORAGE_MAX_ENTRIES
-    ) {
+    if (value.length > PAGE_STORAGE_MAX_VALUE_CHARS) {
+      dropped.push(key)
+      oversize.push(key)
+      continue
+    }
+    if (Object.keys(entries).length >= PAGE_STORAGE_MAX_ENTRIES) {
       dropped.push(key)
       continue
     }
     entries[key] = value
   }
-  return { entries, dropped }
+  return { entries, dropped, oversize }
 }
