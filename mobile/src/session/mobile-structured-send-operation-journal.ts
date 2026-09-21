@@ -90,7 +90,10 @@ async function writeEntries(entries: OperationEntry[]): Promise<void> {
   // Through the one write path, which notes the mirror on an accepted write and on nothing else
   // (ruling 35). The rejection this can raise is the point of the key: a journal the device never
   // wrote must not reach the page, and the composer above catches it as "Message not sent".
-  await persistMirrored(STORAGE_KEY, entries.length === 0 ? null : JSON.stringify({ v: 1, entries }))
+  await persistMirrored(
+    STORAGE_KEY,
+    entries.length === 0 ? null : JSON.stringify({ v: 1, entries })
+  )
 }
 
 async function serialize<T>(action: () => Promise<T>): Promise<T> {

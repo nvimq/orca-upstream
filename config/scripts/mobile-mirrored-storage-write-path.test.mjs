@@ -21,9 +21,15 @@ const MIRROR_MODULE = 'src/storage/mirrored-storage-keys.ts'
 
 /** Every module that persists a key the shell mirrors, with the constant each one writes. */
 const MIRRORED_WRITERS = [
-  { file: 'src/storage/preferences.ts', keys: ['TEXT_SCALE_KEY', 'SIDEBAR_WIDTH_KEY', 'DOCK_WIDTH_KEY'] },
+  {
+    file: 'src/storage/preferences.ts',
+    keys: ['TEXT_SCALE_KEY', 'SIDEBAR_WIDTH_KEY', 'DOCK_WIDTH_KEY']
+  },
   { file: 'src/storage/session-view-preferences.ts', keys: ['DEFAULT_SESSION_VIEW_KEY'] },
-  { file: 'src/terminal/terminal-accessory-layout.ts', keys: ['TERMINAL_ACCESSORY_LAYOUT_STORAGE_KEY'] },
+  {
+    file: 'src/terminal/terminal-accessory-layout.ts',
+    keys: ['TERMINAL_ACCESSORY_LAYOUT_STORAGE_KEY']
+  },
   { file: 'src/components/CustomKeyModal.tsx', keys: ['CUSTOM_ACCESSORY_KEYS_STORAGE_KEY'] },
   { file: 'src/session/mobile-structured-send-operation-journal.ts', keys: ['STORAGE_KEY'] }
 ]
@@ -61,8 +67,10 @@ describe('the mirrored storage write path', () => {
           `${row.file} writes ${key} past the mirror`
         ).toEqual([])
       }
-      expect(linesMatching(source, /\bnoteMirroredWrite\b/), `${row.file} notes the map itself`)
-        .toEqual([])
+      expect(
+        linesMatching(source, /\bnoteMirroredWrite\b/),
+        `${row.file} notes the map itself`
+      ).toEqual([])
     })
   }
 })
