@@ -1,4 +1,5 @@
 import { open } from 'node:fs/promises'
+import { constants } from 'node:fs'
 import type { AgentSessionProviderHandleLink } from '../../shared/agent-session-provider-handle'
 import { claudeProviderHandleLink } from './claude-structured-owner-identity'
 
@@ -41,7 +42,9 @@ function readLeafCandidate(line: string): TranscriptLeafCandidate | null {
 }
 
 export async function readClaudeTranscriptLeafUuid(transcriptPath: string): Promise<string | null> {
-  const file = await open(transcriptPath, 'r')
+  // Why: O_NOFOLLOW refuses symlink swaps (where supported) and O_NONBLOCK prevents a FIFO from hanging the daemon.
+  const flags = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0)
+  const file = await open(transcriptPath, flags)
   try {
     const { size } = await file.stat()
     let position = size

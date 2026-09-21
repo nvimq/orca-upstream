@@ -1,4 +1,4 @@
-import { createReadStream, type Dirent, type Stats } from 'node:fs'
+import { constants, createReadStream, type Dirent, type Stats } from 'node:fs'
 import { access, lstat, open, readdir, readFile, stat, type FileHandle } from 'node:fs/promises'
 import { Readable } from 'node:stream'
 import { StringDecoder } from 'node:string_decoder'
@@ -99,7 +99,8 @@ export function wslGatedOpen(
   signal?: AbortSignal
 ): Promise<TranscriptFileHandle> {
   if (!isWslUncPath(path)) {
-    return open(path, 'r')
+    const flags = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0)
+    return open(path, flags)
   }
   return runWslTranscriptFsTask<TranscriptFileHandle>(
     {
@@ -278,7 +279,8 @@ export function openTranscriptReadStream(
   if (!isWslUncPath(path)) {
     // Node destroys the stream with an AbortError on abort, matching how the
     // gated branch surfaces cancellation to the same consumers.
-    return createReadStream(path, { ...options, signal })
+    const flags = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0)
+  return createReadStream(path, { ...options, flags, signal })
   }
   return Readable.from(gatedChunks(path, options, priority, signal))
 }

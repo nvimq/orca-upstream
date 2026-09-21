@@ -10,7 +10,7 @@
 // never be spliced into a sequence space that a structured session is also
 // writing; a later structured resume rolls the epoch again and rebuilds.
 
-import { createReadStream } from 'node:fs'
+import { constants, createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import type { AgentType } from '../../../shared/agent-status-types'
 import type {
@@ -195,7 +195,9 @@ async function decodeWithIdentities(input: {
   let lineIndex = 0
 
   // Count raw bytes while reading: the source can grow after the stat check.
-  const stream = createReadStream(input.filePath)
+  // Why: O_NOFOLLOW refuses symlink swaps (where supported) and O_NONBLOCK prevents a FIFO from hanging the daemon.
+  const flags = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0)
+  const stream = createReadStream(input.filePath, { flags })
   const { messages } = await decodeTranscriptStream(
     stream,
     input.filePath,
