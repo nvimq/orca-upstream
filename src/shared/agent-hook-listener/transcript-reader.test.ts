@@ -1,5 +1,12 @@
+import { execFileSync } from 'node:child_process'
+import { constants, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { findLastExtractedTranscriptLineText } from './transcript-reader'
+import {
+  findLastExtractedTranscriptLineText,
+  readLastAssistantFromTranscriptOnce
+} from './transcript-reader'
 import { extractAssistantTextFromLine } from './transcript-entry-text'
 
 function expectedLines(text: string): string[] {
@@ -68,13 +75,6 @@ describe('backward transcript line extraction', () => {
     expect(seen).toEqual(['latest'])
   })
 })
-
-import { execFileSync } from 'node:child_process'
-import { constants } from 'node:fs'
-import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { readLastAssistantFromTranscriptOnce } from './transcript-reader'
 
 const hasNoFollow = typeof constants.O_NOFOLLOW === 'number' && constants.O_NOFOLLOW !== 0
 

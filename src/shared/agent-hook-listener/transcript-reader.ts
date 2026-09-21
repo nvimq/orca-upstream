@@ -1,4 +1,4 @@
-import { closeSync, constants, fstatSync, openSync, readSync } from 'node:fs'
+import { closeSync, constants, fstatSync, lstatSync, openSync, readSync } from 'node:fs'
 
 import { extractAssistantTextFromLine } from './transcript-entry-text'
 
@@ -6,10 +6,22 @@ export const TRANSCRIPT_CHUNK_BYTES = 64 * 1024
 export const TRANSCRIPT_MAX_SCAN_BYTES = 4 * 1024 * 1024
 export const EMPTY_TRANSCRIPT_REGION = Buffer.alloc(0)
 
-/** Open a transcript without following a swapped symlink or blocking on a FIFO. */
+/** Open a transcript without following a swapped symlink or blocking on a FIFO.
+ *  Windows has no O_NOFOLLOW (the constant is 0). A pre-open lstat refuses a
+ *  symlink we can already see; POSIX still fails a swap between that check and
+ *  open because O_NOFOLLOW is set. Returning undefined whenever no-follow is
+ *  missing would stop every Windows transcript read. */
 export function openAgentTranscriptRead(
-  transcriptPath: string
+  transcriptPath: string,
+  options?: { allowEmpty?: boolean }
 ): { fd: number; size: number } | undefined {
+  try {
+    if (lstatSync(transcriptPath).isSymbolicLink()) {
+      return undefined
+    }
+  } catch {
+    return undefined
+  }
   const flags = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0)
   let fd: number
   try {
@@ -19,7 +31,7 @@ export function openAgentTranscriptRead(
   }
   try {
     const stats = fstatSync(fd)
-    if (!stats.isFile() || stats.size <= 0) {
+    if (!stats.isFile() || (!options?.allowEmpty && stats.size <= 0)) {
       closeSync(fd)
       return undefined
     }
