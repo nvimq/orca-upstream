@@ -1,5 +1,8 @@
 import { constants, createReadStream, type Dirent, type Stats } from 'node:fs'
-import { access, lstat, open, readdir, readFile, stat, type FileHandle } from 'node:fs/promises'
+
+export const TRANSCRIPT_READ_FLAGS =
+  constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0)
+import { access, lstat, open, readdir, stat, type FileHandle } from 'node:fs/promises'
 import { Readable } from 'node:stream'
 import { StringDecoder } from 'node:string_decoder'
 import { isWslUncPath } from '../../shared/wsl-paths'
@@ -81,14 +84,21 @@ export function wslGatedReaddir(
   )
 }
 
-export function wslGatedReadFile(
+export async function wslGatedReadFile(
   path: string,
   encoding: BufferEncoding,
   priority: WslTranscriptFsTaskPriority,
   signal?: AbortSignal
 ): Promise<string> {
   return runReusableFsOperation({ operation: 'readfile', path, encoding }, priority, signal, () =>
-    readFile(path, encoding)
+    (async () => {
+      const h = await open(path, TRANSCRIPT_READ_FLAGS)
+      try {
+        return await h.readFile({ encoding })
+      } finally {
+        await h.close()
+      }
+    })()
   )
 }
 
@@ -99,8 +109,7 @@ export function wslGatedOpen(
   signal?: AbortSignal
 ): Promise<TranscriptFileHandle> {
   if (!isWslUncPath(path)) {
-    const flags = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0)
-    return open(path, flags)
+    return open(path, TRANSCRIPT_READ_FLAGS)
   }
   return runWslTranscriptFsTask<TranscriptFileHandle>(
     {
@@ -279,8 +288,7 @@ export function openTranscriptReadStream(
   if (!isWslUncPath(path)) {
     // Node destroys the stream with an AbortError on abort, matching how the
     // gated branch surfaces cancellation to the same consumers.
-    const flags = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0)
-  return createReadStream(path, { ...options, flags, signal })
+    return createReadStream(path, { ...options, flags: TRANSCRIPT_READ_FLAGS, signal })
   }
   return Readable.from(gatedChunks(path, options, priority, signal))
 }

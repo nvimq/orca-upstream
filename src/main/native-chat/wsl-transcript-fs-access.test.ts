@@ -48,7 +48,8 @@ import {
   wslGatedReaddir,
   wslGatedReadFile,
   wslGatedStat,
-  WSL_TRANSCRIPT_READ_CHUNK_BYTES
+  WSL_TRANSCRIPT_READ_CHUNK_BYTES,
+  TRANSCRIPT_READ_FLAGS
 } from './wsl-transcript-fs-access'
 import {
   resetWslTranscriptFsGateForTests,
@@ -86,7 +87,11 @@ describe('transcript filesystem accessor off WSL UNC', () => {
     mocks.readFile.mockResolvedValue('body')
     const handle = fakeHandle()
     handle.read.mockResolvedValue({ bytesRead: 0, buffer: Buffer.alloc(0) })
+    handle.readFile = vi.fn().mockResolvedValue('body')
+    handle.close = vi.fn().mockResolvedValue(undefined)
     mocks.open.mockResolvedValue(handle)
+    handle.readFile = vi.fn().mockResolvedValue('body')
+    handle.close = vi.fn().mockResolvedValue(undefined)
     mocks.createReadStream.mockReturnValue('raw-stream')
 
     await wslGatedStat(path, 'exact')
@@ -100,12 +105,13 @@ describe('transcript filesystem accessor off WSL UNC', () => {
     expect(mocks.runTask).not.toHaveBeenCalled()
     expect(mocks.stat).toHaveBeenCalledWith(path)
     expect(mocks.readdir).toHaveBeenCalledWith(path, { withFileTypes: true })
-    expect(mocks.readFile).toHaveBeenCalledWith(path, 'utf-8')
-    expect(mocks.open).toHaveBeenCalledWith(path, 'r')
+    expect(handle.readFile).toHaveBeenCalledWith({ encoding: 'utf-8' })
+    expect(mocks.open).toHaveBeenCalledWith(path, TRANSCRIPT_READ_FLAGS)
     // Off UNC the raw stream is handed back verbatim, encoding included.
     expect(stream).toBe('raw-stream')
     expect(mocks.createReadStream).toHaveBeenCalledWith(path, {
       encoding: 'utf-8',
+      flags: TRANSCRIPT_READ_FLAGS,
       signal: undefined
     })
   })
@@ -118,6 +124,7 @@ describe('transcript filesystem accessor off WSL UNC', () => {
 
     expect(mocks.createReadStream).toHaveBeenCalledWith(POSIX_PATH, {
       start: 4,
+      flags: TRANSCRIPT_READ_FLAGS,
       signal: controller.signal
     })
   })
@@ -132,6 +139,10 @@ describe('transcript filesystem accessor on WSL UNC', () => {
     mocks.lstat.mockResolvedValue({ size: 7 })
     mocks.readdir.mockResolvedValue([])
     mocks.readFile.mockResolvedValue('body')
+    const handle = fakeHandle()
+    handle.readFile = vi.fn().mockResolvedValue('body')
+    handle.close = vi.fn().mockResolvedValue(undefined)
+    mocks.open.mockResolvedValue(handle)
 
     await wslGatedStat(path, 'exact')
     await wslGatedLstat(path, 'scan')
