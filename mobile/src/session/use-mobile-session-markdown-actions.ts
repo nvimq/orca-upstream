@@ -6,7 +6,34 @@ import { triggerSuccess, triggerError } from '../platform/haptics'
 import type { DirtyMarkdownDraft, MobileSessionTab } from './mobile-session-route-types'
 import type { MobileSessionDiffCommentsModel } from './use-mobile-session-diff-comments'
 
-export function useMobileSessionMarkdownActions(scope: MobileSessionDiffCommentsModel) {
+/**
+ * What these actions read, which is fourteen of the session model's two hundred and sixty-eight.
+ *
+ * Declared rather than taking the whole model, so the hook can be rendered on its own: the gate
+ * below is the only `BackHandler` registration in this tree without a unit test of its own
+ * (ruling 33.2), and a probe that had to build the whole session to reach it would be testing the
+ * session. `MobileSessionDiffCommentsModel` satisfies this by construction, so the one caller is
+ * unchanged.
+ */
+export type MobileSessionMarkdownActionsScope = Pick<
+  MobileSessionDiffCommentsModel,
+  | 'hostId'
+  | 'worktreeId'
+  | 'router'
+  | 'client'
+  | 'sessionTabs'
+  | 'setMarkdownDocs'
+  | 'markdownDocs'
+  | 'setDiscardMarkdownTarget'
+  | 'discardMarkdownTarget'
+  | 'setLeaveDrafts'
+  | 'markdownSaveSeqRef'
+  | 'markdownSaveInFlightRef'
+  | 'showToast'
+  | 'readMarkdownTab'
+>
+
+export function useMobileSessionMarkdownActions(scope: MobileSessionMarkdownActionsScope) {
   const {
     hostId,
     worktreeId,
