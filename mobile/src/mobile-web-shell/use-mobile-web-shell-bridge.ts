@@ -46,6 +46,12 @@ export type MobileWebShellBridgeView = {
   readonly bridgeEnabled: boolean
   readonly viewRef: (handle: OrcaMobileWebShellViewHandle | null) => void
   readonly onBridgeMessage: (event: MobileWebShellBridgeMessageEvent) => void
+  /**
+   * Hands the mounted host a rewritten route for the screen it is already serving, and answers
+   * whether a frame went out. False whenever there is no host yet, which the caller has to know:
+   * a param it clears after a publish nobody made is a request the page never heard.
+   */
+  readonly publishRoute: (route: BridgeInitRoute) => boolean
 }
 
 /**
@@ -100,9 +106,15 @@ export function useMobileWebShellBridge(args: {
   const buildId = ready?.buildId ?? null
   const viewRef = useRef<MountedView | null>(null)
   const hostRef = useRef<MountedHost | null>(null)
-  // Fixed for the life of one host: the page routes once, before its first render, so a route that
-  // changed afterwards would have nothing left to change. Held in a ref for that reason — an inline
-  // object in the deps would rebuild the host on every render and settle its pendings each time.
+  // Held in a ref rather than in the deps: an inline object there would rebuild the host on every
+  // render and settle its pendings each time. The host reads this once, when it is built.
+  //
+  // It is not the whole story any more (ruling 33.1). A same-path param change used to be
+  // unreachable — the page routes once, before its first render, so a route that changed
+  // afterwards had nothing left to change, and every switch keyed on the whole route to make one
+  // a remount. The session switch does not: a notification tap for another pane of the session on
+  // screen is a tab switch, so it keeps `paneKey` out of its key and hands the change to
+  // `publishRoute` below, which re-sends `init` to a page that said it takes one.
   const routeRef = useRef(args.route)
   const pageRoutesRef = useRef(args.pageRoutes)
   const pageRouteGrantsRef = useRef(args.pageRouteGrants)
@@ -237,6 +249,17 @@ export function useMobileWebShellBridge(args: {
           return
         }
         mounted.host.receive(event.nativeEvent.json)
+      },
+      [sessionId]
+    ),
+    // Fenced on the session the same way inbound frames are: a host left over from a session this
+    // render has moved past must not be handed this one's route.
+    publishRoute: useCallback(
+      (route: BridgeInitRoute) => {
+        const mounted = hostRef.current
+        return (
+          mounted !== null && mounted.sessionId === sessionId && mounted.host.publishRoute(route)
+        )
       },
       [sessionId]
     )

@@ -1,4 +1,5 @@
-import { useLocalSearchParams } from 'expo-router'
+import { useCallback } from 'react'
+import { useLocalSearchParams, useRouter } from 'expo-router'
 import { MobileSessionRouteScreen } from '../../../../src/session/MobileSessionRouteScreen'
 import { firstParam } from '../../../../src/navigation/route-param-reader'
 import {
@@ -16,10 +17,13 @@ import { useMobileWebShellEnabled } from '../../../../src/mobile-web-shell/use-m
  * would open the terminal, chat and tab subscriptions behind the page as well as in front of it.
  * As an element it is built and not mounted, and only `fallback` ever mounts it.
  *
- * Four query params rather than the review's four, and one of them is consumed by the screen: the
- * notification hook rewrites `paneKey` to empty the moment it has switched to the pane, so a tap
- * cannot be replayed by a later snapshot. That rewrite is `setParams` on the handoff, which inside
- * the page is the document's own router, so the param has to arrive in the page for it to happen.
+ * Four query params rather than the review's four, and one of them is not part of this screen's
+ * identity: `paneKey`. A notification tap for a pane of the session already on screen is a tab
+ * switch, so keying on it would tear the bridge down and reload the page for one, and keying on it
+ * while the page cleared its own copy lost a repeat tap outright (ruling 33.1). It travels as a
+ * route update instead — a re-sent `init` to a page that said it takes one — and this file clears
+ * the native param once the page has been handed it, exactly as the notification hook did, so no
+ * later `init` can replay a spent tap.
  */
 export default function MobileSessionScreen() {
   // Through `firstParam` on every param, as every switch does: expo-router answers a repeated query
@@ -37,7 +41,13 @@ export default function MobileSessionScreen() {
   const hostId = firstParam(params.hostId)
   const worktreeId = firstParam(params.worktreeId)
   const enabled = useMobileWebShellEnabled()
+  const router = useRouter()
   const native = <MobileSessionRouteScreen />
+  // Empty rather than absent, which is what the notification hook wrote and what the route builder
+  // below drops: a cleared key and a key that was never there are the same route.
+  const clearPaneKey = useCallback(() => {
+    router.setParams({ paneKey: '' })
+  }, [router])
 
   // Each omitted when empty, because the screen reads the difference: `created` is a one-shot flag
   // the create flow sets to `1`, `warning` is the host's own text, `name` is a label the screen
@@ -59,15 +69,21 @@ export default function MobileSessionScreen() {
   if (enabled !== true || !hostId || route === null) {
     return native
   }
-  // Keyed on the route: a host captures the grants its session was opened with, so a screen reused
-  // across a route change would keep authorising frames under the grants of the route the page has
-  // left. The key is what makes the change a remount, which disposes that bridge in the commit.
+  // Keyed on the route minus `paneKey`: a host captures the grants its session was opened with, so
+  // a screen reused across a route change would keep authorising frames under the grants of the
+  // route the page has left, and the key is what makes that change a remount. A pane is not such a
+  // change — it is a tab of the session this key already names — so it is left out here and
+  // delivered to the mounted page instead. Derived from the same builder every other switch uses;
+  // `shellScreenRouteKey` is untouched, because for the other four a param change *is* an identity
+  // change.
+  const { paneKey: _paneKey, ...identity } = routeParams
   return (
     <MobileWebShellScreen
-      key={shellScreenRouteKey(route)}
+      key={shellScreenRouteKey({ pathname: route.pathname, params: identity })}
       hostId={hostId}
       route={route}
       fallback={native}
+      onRouteDelivered={clearPaneKey}
     />
   )
 }

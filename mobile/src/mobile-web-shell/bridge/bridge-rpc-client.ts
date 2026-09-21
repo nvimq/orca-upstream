@@ -26,11 +26,13 @@ import { createBridgeClientNotifications } from './bridge-client-notifications'
 import { BridgeClientRequests } from './bridge-client-requests'
 import { BridgeClientSubscriptions } from './bridge-client-subscriptions'
 import { isBridgeNativeMethod, type BridgeNativeVerb } from './bridge-native-verbs'
+import { BRIDGE_ROUTE_UPDATE_ACCEPT } from './bridge-route-update'
 import {
   BRIDGE_PROTOCOL_VERSION,
   type BridgeClientMessage,
   type BridgeConnectionSnapshot,
-  type BridgeHostMessage
+  type BridgeHostMessage,
+  type BridgeInitRoute
 } from './bridge-envelope'
 
 export type { BridgeShellSession } from './bridge-client-session'
@@ -60,6 +62,14 @@ export type BridgeRpcClientOptions = {
 export type BridgeRpcClient = RpcClient & {
   /** Fires once `init` has landed, immediately if it already has. Mount no screen before it. */
   onReady: (listener: () => void) => () => void
+  /**
+   * Fires each time the shell rewrites a param of the screen this page is already on, which is a
+   * second `init` for the session it already holds. Never for the first one.
+   *
+   * One delivery per tap rather than one per distinct value: a notification tap for the pane
+   * already showing is a real request, and a listener that deduplicated by value would lose it.
+   */
+  onRouteUpdate: (listener: (route: BridgeInitRoute | null) => void) => () => void
   getShellSession: () => BridgeShellSession | null
   /**
    * Asks the shell to open a screen this page does not render. False when the shell granted no
@@ -126,6 +136,8 @@ export function createBridgeRpcClient(options: BridgeRpcClientOptions): BridgeRp
   const requests = new BridgeClientRequests()
   const cache = new BridgeConnectionCache()
   const readyListeners = new Set<() => void>()
+  /** Standing, unlike `readyListeners`: a route can move any number of times inside one session. */
+  const routeUpdateListeners = new Set<(route: BridgeInitRoute | null) => void>()
   let session: BridgeShellSession | null = null
   let closed = false
   let idCounter = 0
@@ -184,7 +196,9 @@ export function createBridgeRpcClient(options: BridgeRpcClientOptions): BridgeRp
   })
 
   const handshake = createBridgeInitHandshake(() => {
-    sendFrame({ v: BRIDGE_PROTOCOL_VERSION, type: 'ready' })
+    // Declared on every ask, because the shell reads it off whichever `ready` it answers: this
+    // page build knows how to take a second `init` for the session it already holds.
+    sendFrame({ v: BRIDGE_PROTOCOL_VERSION, type: 'ready', accepts: [BRIDGE_ROUTE_UPDATE_ACCEPT] })
   })
 
   /**
@@ -208,21 +222,46 @@ export function createBridgeRpcClient(options: BridgeRpcClientOptions): BridgeRp
     return held
   }
 
-  /** A second `init` is ordinary: the shell answers every `ready`, and a page that re-asked hears
-   *  its own session again. A different id is not, and nothing the page held survives it. */
+  /**
+   * A second `init` is ordinary: the shell answers every `ready`, and a page that re-asked hears
+   * its own session again. A different id is not, and nothing the page held survives it.
+   *
+   * For the same id it is a route update and nothing else (ruling 33.1). The screen is the one
+   * already mounted, so every request in flight, every subscription, the storage snapshot the page
+   * booted from and the generation stay exactly as they are, and only `route` moves — which is how
+   * a notification tap for another pane of this session reaches a page that is already on it. The
+   * session object is rebuilt only when the id changes, so the identity of what the page holds is
+   * itself the assertion that nothing was replaced.
+   */
   function acceptInit(message: Extract<BridgeHostMessage, { type: 'init' }>): void {
     handshake.stop()
-    if (session !== null && session.sessionId !== message.sessionId) {
+    const held = session
+    const update = held !== null && held.sessionId === message.sessionId ? held : null
+    if (held !== null && update === null) {
       const replaced = new BridgeShellReplacedError()
       requests.closeAll(replaced)
       subscriptions.failAll(replaced.message)
     }
-    session = readShellSession(message)
+    // Updated in place for the session the page already holds, rebuilt for a different one. The
+    // identity of what survives is the assertion: same object, so the storage snapshot the page
+    // booted from is the one it keeps.
+    session =
+      update === null ? readShellSession(message) : { ...update, route: message.route ?? null }
+    // Re-primed either way, because a second `init` is also how the page recovers a cache it has
+    // refused a `state` frame into: the shell rebuilt under it publishes a generation the page's
+    // own is newer than, and this frame is what puts the two back in step. A pane update carries
+    // the same snapshot it already holds, which `prime` answers with no transition.
     cache.prime(message.connection)
     for (const listener of readyListeners) {
       listener()
     }
     readyListeners.clear()
+    if (update === null) {
+      return
+    }
+    for (const listener of routeUpdateListeners) {
+      listener(session.route)
+    }
   }
 
   /** A shell rebuilt under the page: what the cache holds is for a client that is already gone. */
@@ -396,6 +435,14 @@ export function createBridgeRpcClient(options: BridgeRpcClientOptions): BridgeRp
       readyListeners.add(listener)
       return () => {
         readyListeners.delete(listener)
+      }
+    },
+    // Not fired on subscribe, and no replay: a listener that arrives late reads the route it wants
+    // off `getShellSession`, and what this publishes is the fact that one moved.
+    onRouteUpdate: (listener) => {
+      routeUpdateListeners.add(listener)
+      return () => {
+        routeUpdateListeners.delete(listener)
       }
     },
     getShellSession: () => session

@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { ActivityIndicator, Linking, Pressable, StyleSheet, Text, View } from 'react-native'
 import { useRouter } from 'expo-router'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -20,6 +20,7 @@ import {
 } from './mobile-web-shell-dev-facts'
 import { cancelledShellNavigationTarget } from './cancelled-navigation-target'
 import { playPageHaptic } from './page-haptics'
+import { shellScreenRouteKey } from './shell-screen-route'
 import { useMobileWebShellBridge } from './use-mobile-web-shell-bridge'
 import type { MobileWebShellRuntime } from './mobile-web-shell-runtime'
 import { useNativeDeviceVerbs } from '../platform/use-native-device-verbs'
@@ -130,6 +131,17 @@ export type MobileWebShellScreenProps = {
    * the negotiation falls back to, and a shell with nothing behind it would paint a blank instead.
    */
   fallback: ReactNode
+  /**
+   * Called once the page has been handed this route, so a caller carrying a one-shot param can
+   * clear it (the session switch and its `paneKey`, ruling 33.1).
+   *
+   * Both ways a route reaches the page: the `init` that answered its `ready`, and a re-sent one
+   * for a route that moved while the screen stayed mounted. Never for a publish that posted
+   * nothing — a param cleared after a frame nobody sent is a tap the page never heard. Only a
+   * switch whose key leaves a param out ever sees the second kind; every other one keys on the
+   * whole route, so a param change there is a remount.
+   */
+  onRouteDelivered?: (route: BridgeInitRoute) => void
   runtime?: MobileWebShellRuntime
 }
 
@@ -144,6 +156,7 @@ export function MobileWebShellScreen({
   hostId,
   route,
   fallback,
+  onRouteDelivered,
   runtime
 }: MobileWebShellScreenProps) {
   const insets = useSafeAreaInsets()
@@ -205,6 +218,9 @@ export function MobileWebShellScreen({
     onPageReady: () => {
       reportPageReady()
       void refreshStorage()
+      // The `init` this ready is answered with is built and posted before this runs, so the route
+      // it carries has reached the page and a one-shot param on it is spent.
+      onRouteDelivered?.(route)
     },
     // `document-load-failed` because that is what happens: the document loads and the page refuses
     // the session, so no tree is ever built. The refetch it costs is wasted on a route this shell
@@ -240,6 +256,23 @@ export function MobileWebShellScreen({
     // and the diagnostic beside it prints once per host.
     onBinaryFramesDropped: reportDroppedBinaryFrames
   })
+
+  // A route that moved under a screen that stayed mounted, which the key is what decides: the
+  // session switch keeps `paneKey` out of its key so a notification tap for another pane is a tab
+  // switch rather than a page reload, and this is how the page hears about it. Keyed on the page's
+  // own identity for a route, so a re-render holding an equal route publishes nothing.
+  const publishedRouteKey = useRef(shellScreenRouteKey(route))
+  const publishRoute = bridge.publishRoute
+  useEffect(() => {
+    const key = shellScreenRouteKey(route)
+    if (key === publishedRouteKey.current) {
+      return
+    }
+    publishedRouteKey.current = key
+    if (publishRoute(route)) {
+      onRouteDelivered?.(route)
+    }
+  }, [onRouteDelivered, publishRoute, route])
 
   // A profile read that rejected never becomes a host, so the session would otherwise sit in
   // `ready` behind an un-hidden view with nothing serving it and the page asking forever.

@@ -3,6 +3,7 @@ import { isRpcResponse } from '../../transport/rpc-response-shape'
 import type { RpcResponse } from '../../transport/types'
 import { BridgeErrorCaptureSchema } from './bridge-error-capture'
 import { BRIDGE_HAPTICS_NOTIFY_FIELDS } from './bridge-haptics-notify'
+import { BridgeInitRouteSchema, type BridgeInitRoute } from './bridge-init-route'
 import { BridgePageRouteGrantsSchema } from './bridge-page-route-grants'
 import {
   isPageStorageKey,
@@ -12,18 +13,17 @@ import {
 } from '../page-storage-keys'
 import {
   BRIDGE_MAX_METHOD_CHARS,
+  BRIDGE_MAX_PAGE_ACCEPT_CHARS,
+  BRIDGE_MAX_PAGE_ACCEPTS,
   BRIDGE_MAX_PAGE_ROUTES,
   BRIDGE_MAX_REPLY_PARTS,
   BRIDGE_MAX_EXTERNAL_LINK_CHARS,
   BRIDGE_MAX_ROUTE_HREF_CHARS,
-  BRIDGE_MAX_ROUTE_PARAM_CHARS,
-  BRIDGE_MAX_ROUTE_PARAMS,
   BRIDGE_MAX_ROUTE_PATHNAME_CHARS,
   BRIDGE_MAX_VIEWPORT_COLS,
   BRIDGE_MAX_VIEWPORT_ROWS,
   BRIDGE_MAX_HOST_FIELD_CHARS,
   BRIDGE_ROUTE_HREF_PATTERN,
-  BRIDGE_ROUTE_PATHNAME_PATTERN,
   isBridgeExternalLinkUrl,
   parseBridgeMessage,
   type BridgeDirection,
@@ -102,33 +102,9 @@ export const BridgeGrantsSchema = z.object({
 
 export type BridgeGrants = z.infer<typeof BridgeGrantsSchema>
 
-/**
- * Which screen the shell opened this page for.
- *
- * Additive, and optional for that reason: a shell built before C1.2 sends no `route`, and the page
- * says so rather than painting expo-router's Unmatched screen. It has to cross, because the
- * document is served at `/` and refuses every other path, so the page's own location matches no
- * route in the tree it carries and there is nothing else to derive the screen from.
- *
- * `params` is the search half, kept out of `pathname` so neither side has to parse a URL: the page
- * builds one, once, and writes it into its history before the first render.
- */
-export const BridgeInitRouteSchema = z.object({
-  pathname: z
-    .string()
-    .min(1)
-    .max(BRIDGE_MAX_ROUTE_PATHNAME_CHARS)
-    .regex(BRIDGE_ROUTE_PATHNAME_PATTERN),
-  params: z
-    .record(
-      z.string().min(1).max(BRIDGE_MAX_ROUTE_PARAM_CHARS),
-      z.string().max(BRIDGE_MAX_ROUTE_PARAM_CHARS)
-    )
-    .refine((params) => Object.keys(params).length <= BRIDGE_MAX_ROUTE_PARAMS)
-    .optional()
-})
-
-export type BridgeInitRoute = z.infer<typeof BridgeInitRouteSchema>
+// The route half of `init`, in its own module; re-exported so the envelope stays one import for
+// everything that reads a bridge frame.
+export { BridgeInitRouteSchema, type BridgeInitRoute }
 
 /**
  * The host the shell opened this page for, minus everything secret about it.
@@ -231,7 +207,23 @@ const replyPartSchema = z.object({
 })
 
 const BridgeClientMessageSchema = z.discriminatedUnion('type', [
-  z.object({ v: versionSchema, type: z.literal('ready') }),
+  z.object({
+    v: versionSchema,
+    type: z.literal('ready'),
+    /**
+     * What this page can be sent beyond its first `init`; the names and why live in
+     * `bridge-route-update.ts`, which is the only one there is.
+     *
+     * Optional, and safe in both directions without a version bump: a page that sends none is
+     * never sent a second `init`, and a shell that reads none never sends one. An unknown name is
+     * accepted by the schema and ignored by the shell, which is what a newer page declaring a
+     * capability this shell has never implemented has to look like.
+     */
+    accepts: z
+      .array(z.string().min(1).max(BRIDGE_MAX_PAGE_ACCEPT_CHARS))
+      .max(BRIDGE_MAX_PAGE_ACCEPTS)
+      .optional()
+  }),
   z.object({
     v: versionSchema,
     type: z.literal('request'),

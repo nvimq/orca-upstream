@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { createFakeBridgePortPair } from './bridge-port-pair-test-harness'
-import { BRIDGE_ROUTE_UPDATE_ACCEPT, type BridgeInitRoute } from './bridge-envelope'
+import type { BridgeInitRoute } from './bridge-envelope'
+import { BRIDGE_ROUTE_UPDATE_ACCEPT } from './bridge-route-update'
 
 const SESSION = '/h/host-a/session/wt-1'
 
@@ -13,7 +14,10 @@ function sessionRoute(paneKey?: string): BridgeInitRoute {
 }
 
 async function openedOnTheSession(): Promise<ReturnType<typeof createFakeBridgePortPair>> {
-  const pair = createFakeBridgePortPair({ route: sessionRoute(), storage: { 'orca:a': '1' } })
+  const pair = createFakeBridgePortPair({
+    route: sessionRoute(),
+    storage: { 'orca:hostDockWidth': '320' }
+  })
   await pair.flush()
   return pair
 }
@@ -71,7 +75,7 @@ describe('a route update over a re-sent init', () => {
     pair.host.publishRoute(sessionRoute('pane-1'))
     await pair.flush()
     const sent = pair.rpc.requests.find((request) => request.method === 'worktree.list')
-    sent?.resolve({ ok: true, result: { worktrees: [] }, _meta: {} })
+    sent?.resolve({ id: 'r1', ok: true, result: { worktrees: [] } })
     await pair.flush()
     await expect(pending).resolves.toMatchObject({ ok: true })
   })
@@ -91,17 +95,25 @@ describe('a route update over a re-sent init', () => {
    */
   it('sends no second init to a page that never declared it accepts one', async () => {
     const pair = await openedOnTheSession()
+    expect(pair.readToShell().find((frame) => frame.type === 'ready')).toMatchObject({
+      accepts: [BRIDGE_ROUTE_UPDATE_ACCEPT]
+    })
+    // This page, then the same document reloaded as a build that declares nothing -- which is what
+    // a released page is. The host reads `accepts` off whichever `ready` it last answered.
+    pair.host.receive(JSON.stringify({ v: 1, type: 'ready' }))
+    await pair.flush()
     const framesBefore = pair.toPage.length
-    const ready = pair.readToShell().find((frame) => frame.type === 'ready')
-    expect(ready).toMatchObject({ accepts: [BRIDGE_ROUTE_UPDATE_ACCEPT] })
-    // The same host, told by a page that declared nothing.
-    const older = createFakeBridgePortPair({ route: sessionRoute() })
-    older.host.receive(JSON.stringify({ v: 1, type: 'ready' }))
-    await older.flush()
-    const olderFrames = older.toPage.length
-    older.host.publishRoute(sessionRoute('pane-1'))
-    await older.flush()
-    expect(older.toPage.length).toBe(olderFrames)
-    expect(pair.toPage.length).toBeGreaterThan(framesBefore - 1)
+    pair.host.publishRoute(sessionRoute('pane-1'))
+    await pair.flush()
+    expect(pair.toPage.length).toBe(framesBefore)
+    // And the contrast, so the case fails when the gate stops gating rather than when it starts.
+    pair.host.receive(
+      JSON.stringify({ v: 1, type: 'ready', accepts: [BRIDGE_ROUTE_UPDATE_ACCEPT] })
+    )
+    await pair.flush()
+    const framesAfterReady = pair.toPage.length
+    pair.host.publishRoute(sessionRoute('pane-2'))
+    await pair.flush()
+    expect(pair.toPage.length).toBe(framesAfterReady + 1)
   })
 })

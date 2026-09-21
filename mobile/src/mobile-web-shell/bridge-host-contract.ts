@@ -42,6 +42,10 @@ export type BridgeHostDiagnostic =
   /** The shell asked this host to open a screen the protocol does not allow. The host serves no
    *  session at all in that state: an `init` the page refuses is worse than no `init`. */
   | { kind: 'route-refused'; issue: string }
+  /** A rewritten route this host would not hand its page: a different screen, or a shape the
+   *  page's own reader would refuse. Local only — nothing crosses, and the tap it came from is
+   *  then the lost repeat tap it was before ruling 33.1. */
+  | { kind: 'route-update-refused'; issue: string }
   /** A page subscribed with `wantsBinary` on a session whose route was never granted the lane.
    *  Local only: the subscription proceeds and its JSON events cross, so nothing crosses back and
    *  this line is the only thing that can say why the frames never became binary. */

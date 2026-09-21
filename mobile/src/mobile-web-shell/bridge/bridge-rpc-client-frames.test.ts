@@ -12,6 +12,7 @@ import {
   BRIDGE_ACK_INTERVAL_FRAMES
 } from './bridge-client-subscriptions'
 import { BRIDGE_PROTOCOL_VERSION, type BridgeHostMessage } from './bridge-envelope'
+import { BRIDGE_ROUTE_UPDATE_ACCEPT } from './bridge-route-update'
 import {
   BRIDGE_READY_RETRY_MAX_MS,
   BRIDGE_READY_RETRY_MIN_MS
@@ -39,9 +40,11 @@ afterEach(() => {
 })
 
 describe('bridge client handshake', () => {
-  it('asks for a session as soon as it exists', () => {
+  it('asks for a session as soon as it exists, naming what it can be sent', () => {
     const page = createPageClient()
-    expect(page.frames()).toEqual([{ v: BRIDGE_PROTOCOL_VERSION, type: 'ready' }])
+    expect(page.frames()).toEqual([
+      { v: BRIDGE_PROTOCOL_VERSION, type: 'ready', accepts: [BRIDGE_ROUTE_UPDATE_ACCEPT] }
+    ])
   })
 
   it('keeps asking on a widening backoff until init answers', () => {
