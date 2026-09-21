@@ -45,6 +45,8 @@ export type Harness = {
   backPops: BridgeNavigateBackOutcome[]
   storageWrites: { key: string; value: string | null }[]
   pageReadyCount: () => number
+  /** One entry per `ready` answered, saying whether an `init` actually went out for it. */
+  pageReadySentInit: () => readonly boolean[]
   routeRefusals: string[]
   pageFaults: BridgeErrorCapture[]
   frames: () => BridgeHostMessage[]
@@ -101,6 +103,8 @@ export function harness(
   const backPops: BridgeNavigateBackOutcome[] = []
   const storageWrites: { key: string; value: string | null }[] = []
   let pageReadies = 0
+  /** One entry per `ready` answered, saying whether an `init` actually went out for it. */
+  const pageReadySentInit: boolean[] = []
   const routeRefusals: string[] = []
   const pageFaults: BridgeErrorCapture[] = []
   const droppedBinaryFrames: number[] = []
@@ -121,8 +125,9 @@ export function harness(
     readStorage:
       options.readStorage ?? (() => ({ storage: options.storage ?? {}, storageOversize: [] })),
     onStorageWrite: (key, value) => storageWrites.push({ key, value }),
-    onPageReady: () => {
+    onPageReady: (sentInit: boolean) => {
       pageReadies += 1
+      pageReadySentInit.push(sentInit)
     },
     onRouteRefused: (issue) => routeRefusals.push(issue),
     onNavigate: options.onNavigate ?? ((href) => navigations.push(href)),
@@ -179,6 +184,7 @@ export function harness(
     backPops,
     storageWrites,
     pageReadyCount: () => pageReadies,
+    pageReadySentInit: () => pageReadySentInit,
     routeRefusals,
     pageFaults,
     frames,

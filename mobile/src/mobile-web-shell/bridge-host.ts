@@ -166,10 +166,12 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
    * recorder mounts its screen in the same turn it drains one; an `init` that waited on a promise
    * would change what the first render of every replay sees. The caller keeps the map current.
    */
-  function sendInit(): void {
+  /** True when a frame went out. False is a refused route: the page is answered and told nothing,
+   *  which the caller has to know before it spends a one-shot param on it. */
+  function sendInit(): boolean {
     const route = routes.current()
     if (route === null) {
-      return
+      return false
     }
     initSent = true
     send(
@@ -185,6 +187,7 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
         ...options.readStorage()
       })
     )
+    return true
   }
 
   function sendReply(id: string, payload: RpcResponse): void {
@@ -328,10 +331,12 @@ export function createBridgeHost(options: BridgeHostOptions): BridgeHost {
     if (message.type === 'ready') {
       serving = true
       routes.readReady(message)
-      sendInit()
+      const sentInit = sendInit()
       // Every time it is asked, not once: the page re-asks on a backoff, and the shell's wait ends
-      // on the first of those that lands rather than on a particular one.
-      options.onPageReady()
+      // on the first of those that lands rather than on a particular one. Carrying whether an
+      // `init` went out, because a refused route answers the ask with nothing and a caller that
+      // clears a one-shot param here would spend a tap the page never received.
+      options.onPageReady(sentInit)
       return
     }
     if (!serving) {

@@ -95,7 +95,7 @@ export function useMobileWebShellBridge(args: {
   /** The page could not render the generation on screen. Reported, never recovered from here. */
   onPageFault: (error: BridgeErrorCapture) => void
   /** The page asked for a session. Reported so the screen can stop waiting for it. */
-  onPageReady: () => void
+  onPageReady: (sentInit: boolean) => void
   /** This shell named a screen the protocol does not allow, so no session is served. */
   onRouteRefused: (issue: string) => void
   /** Every screencast frame this host has dropped, so the shell can show the running total. */
@@ -190,9 +190,9 @@ export function useMobileWebShellBridge(args: {
       onPageFault: (error) => {
         pageFaultRef.current(error)
       },
-      onPageReady: () => {
+      onPageReady: (sentInit) => {
         establishedSessionRef.current = sessionId
-        pageReadyRef.current()
+        pageReadyRef.current(sentInit)
       },
       onRouteRefused: (issue) => {
         routeRefusedRef.current(issue)

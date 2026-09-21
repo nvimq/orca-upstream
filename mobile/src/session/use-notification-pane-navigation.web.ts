@@ -36,6 +36,9 @@ export function useNotificationPaneNavigation({
   useEffect(
     () =>
       client.onRouteUpdate((route) => {
+        // Load-bearing, not defensive. The shell clears `paneKey` after each delivery, so the
+        // clear itself arrives here as a route that moved — and a re-asked `ready` that lands
+        // between the tap and the clear carries the cleared route too. Neither is a request.
         const paneKey = route?.params?.paneKey ?? ''
         if (paneKey === '') {
           return

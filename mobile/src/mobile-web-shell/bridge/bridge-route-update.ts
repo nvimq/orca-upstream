@@ -18,6 +18,26 @@ import { shellScreenRouteKey } from '../shell-screen-route'
 export const BRIDGE_ROUTE_UPDATE_ACCEPT = 'route-update'
 
 /**
+ * Whether two routes are different screens as the page experiences them.
+ *
+ * `shellScreenRouteKey` is the page's own identity for a route, so "moved" means here exactly what
+ * a remount means at the switch, and both ends of the seam read the same definition: the host will
+ * not send an `init` for a route that did not move, and the page will not publish one it was sent
+ * anyway. The second half is not redundant — the shell answers every `ready`, including the ones
+ * the page's own backoff and its stale-`state` restart ask for, and each of those carries the held
+ * route.
+ */
+export function bridgeRouteMoved(
+  held: BridgeInitRoute | null,
+  next: BridgeInitRoute | null
+): boolean {
+  if (held === null || next === null) {
+    return held !== next
+  }
+  return shellScreenRouteKey(held) !== shellScreenRouteKey(next)
+}
+
+/**
  * What a host does with a rewritten route: hold it for the next `init`, send one now, or refuse.
  *
  * `hold` and `send` both move what the host will publish, because a page that reloads inside this
@@ -53,7 +73,7 @@ export function readBridgeRouteUpdate(args: {
   if (parsed.data.pathname !== held.pathname) {
     return { kind: 'refuse', issue: 'not-this-screen' }
   }
-  const moved = shellScreenRouteKey(parsed.data) !== shellScreenRouteKey(held)
+  const moved = bridgeRouteMoved(held, parsed.data)
   const sendable = moved && args.deliverable && args.accepts.includes(BRIDGE_ROUTE_UPDATE_ACCEPT)
   return { kind: sendable ? 'send' : 'hold', route: parsed.data }
 }

@@ -146,6 +146,25 @@ describe('init and state', () => {
     }
   })
 
+  it('tells the ready handler that no init went out for a refused route', () => {
+    // The screen clears a one-shot param when the page has been handed the route (ruling 33.1),
+    // and a refused route answers the `ready` without sending anything: the caller would spend a
+    // notification tap the page never received. Unreachable from the session switch, which parses
+    // the route before it mounts the shell, and the prop's contract says so anyway.
+    const bridge = harness({ route: { pathname: '/h/a b' } })
+    bridge.host.receive(clientFrame({ type: 'ready' }))
+    expect(bridge.posted).toEqual([])
+    expect(bridge.pageReadyCount()).toBe(1)
+    expect(bridge.pageReadySentInit()).toEqual([false])
+  })
+
+  it('tells it an init did go out for a route the protocol allows', () => {
+    const bridge = harness({ route: { pathname: '/h/host-a' } })
+    bridge.host.receive(clientFrame({ type: 'ready' }))
+    expect(bridge.posted).toHaveLength(1)
+    expect(bridge.pageReadySentInit()).toEqual([true])
+  })
+
   it('opens a session for the routes a screen actually produces', () => {
     for (const pathname of ['/h/host-a', '/h/host-a/tasks', '/h/a%20b', '/']) {
       const bridge = harness({ route: { pathname } })

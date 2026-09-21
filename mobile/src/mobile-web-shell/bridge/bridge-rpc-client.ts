@@ -26,7 +26,7 @@ import { createBridgeClientNotifications } from './bridge-client-notifications'
 import { BridgeClientRequests } from './bridge-client-requests'
 import { BridgeClientSubscriptions } from './bridge-client-subscriptions'
 import { isBridgeNativeMethod, type BridgeNativeVerb } from './bridge-native-verbs'
-import { BRIDGE_ROUTE_UPDATE_ACCEPT } from './bridge-route-update'
+import { BRIDGE_ROUTE_UPDATE_ACCEPT, bridgeRouteMoved } from './bridge-route-update'
 import {
   BRIDGE_PROTOCOL_VERSION,
   type BridgeClientMessage,
@@ -64,10 +64,13 @@ export type BridgeRpcClient = RpcClient & {
   onReady: (listener: () => void) => () => void
   /**
    * Fires each time the shell rewrites a param of the screen this page is already on, which is a
-   * second `init` for the session it already holds. Never for the first one.
+   * second `init` for the session it already holds. Never for the first one, and never for a
+   * re-sent `init` whose route is the one the page already holds — a re-asked `ready` is answered
+   * with that route and is not a request.
    *
-   * One delivery per tap rather than one per distinct value: a notification tap for the pane
-   * already showing is a real request, and a listener that deduplicated by value would lose it.
+   * One delivery per tap rather than one per distinct value: the shell clears the param after each
+   * delivery, so a notification tap for the pane already showing arrives as a real move and a
+   * listener that deduplicated by value would lose exactly that one.
    */
   onRouteUpdate: (listener: (route: BridgeInitRoute | null) => void) => () => void
   getShellSession: () => BridgeShellSession | null
@@ -256,7 +259,10 @@ export function createBridgeRpcClient(options: BridgeRpcClientOptions): BridgeRp
       listener()
     }
     readyListeners.clear()
-    if (update === null) {
+    // Only a route that moved is an update. The shell answers every `ready` with the route it
+    // holds, and the page re-asks on its own backoff and again after a refused `state` frame, so
+    // publishing each of those would hand the pane hook the route it is already on.
+    if (update === null || !bridgeRouteMoved(update.route, session.route)) {
       return
     }
     for (const listener of routeUpdateListeners) {

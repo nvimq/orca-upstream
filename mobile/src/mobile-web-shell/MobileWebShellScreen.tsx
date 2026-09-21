@@ -215,12 +215,17 @@ export function MobileWebShellScreen({
     // the map as they are made. This re-seats that map on the store afterwards, for the key whose
     // write never persisted, and it runs on every ask because a document that reloads inside this
     // mount asks again.
-    onPageReady: () => {
+    onPageReady: (sentInit) => {
       reportPageReady()
       void refreshStorage()
-      // The `init` this ready is answered with is built and posted before this runs, so the route
-      // it carries has reached the page and a one-shot param on it is spent.
-      onRouteDelivered?.(route)
+      // Only when a frame went out. The `init` is built and posted before this runs, so on the
+      // ordinary path the route has reached the page and a one-shot param on it is spent — but a
+      // route the host refused answers the ask with nothing, and clearing the param there would
+      // spend a tap the page never received. Unreachable from the session switch, which parses the
+      // route before it mounts this screen; the prop's contract says it anyway.
+      if (sentInit) {
+        onRouteDelivered?.(route)
+      }
     },
     // `document-load-failed` because that is what happens: the document loads and the page refuses
     // the session, so no tree is ever built. The refetch it costs is wasted on a route this shell

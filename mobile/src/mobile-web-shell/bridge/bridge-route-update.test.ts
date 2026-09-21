@@ -68,6 +68,32 @@ describe('a route update over a re-sent init', () => {
     expect(pair.client.getShellSession()?.sessionId).toBe(before?.sessionId)
   })
 
+  /**
+   * A re-asked `ready` is not a route update (round 2).
+   *
+   * The page re-asks on its backoff and again after a refused `state` frame, and the shell answers
+   * every ask with the route it holds. Publishing those as updates made the pane hook see the
+   * route it was already on — `['', 'pane-1']` for one tap — so the listener fires only when the
+   * params have actually moved.
+   */
+  it('publishes nothing for a re-asked ready that carries the route the page holds', async () => {
+    const pair = await openedOnTheSession()
+    const seen = recordRouteUpdates(pair)
+    pair.host.receive(
+      JSON.stringify({ v: 1, type: 'ready', accepts: [BRIDGE_ROUTE_UPDATE_ACCEPT] })
+    )
+    await pair.flush()
+    expect(seen).toEqual([])
+    // And the same ask after a real update still leaves exactly the one delivery behind it.
+    pair.host.publishRoute(sessionRoute('pane-1'))
+    await pair.flush()
+    pair.host.receive(
+      JSON.stringify({ v: 1, type: 'ready', accepts: [BRIDGE_ROUTE_UPDATE_ACCEPT] })
+    )
+    await pair.flush()
+    expect(seen).toEqual(['pane-1'])
+  })
+
   it('leaves a request pending across the update still resolving', async () => {
     const pair = await openedOnTheSession()
     const pending = pair.client.sendRequest('worktree.list')
