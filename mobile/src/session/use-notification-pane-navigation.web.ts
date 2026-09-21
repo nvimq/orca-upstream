@@ -1,9 +1,7 @@
 import { useEffect, useState } from 'react'
 import { usePageBridgeClient } from '../transport/client-context.web'
 import type { MobileSessionTab } from './mobile-session-route-types'
-import { notificationPaneTab } from './use-notification-pane-navigation'
-
-export { notificationPaneTab } from './use-notification-pane-navigation'
+import { notificationPaneTab } from './notification-pane-tab'
 
 /** One tap. The ordinal is what tells a repeat tap for the pane already showing from a re-render. */
 type PaneRequest = { readonly paneKey: string; readonly ordinal: number }
