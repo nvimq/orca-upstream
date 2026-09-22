@@ -82,4 +82,10 @@ describe('detectLanguage', () => {
     expect(detectLanguage('config/tsconfig.jsonc')).toBe('json')
     expect(detectLanguage('notes/scratch.unknownext')).toBe('plaintext')
   })
+
+  it('maps Apex classes and triggers to the bundled apex language id', () => {
+    expect(detectLanguage('force-app/main/default/classes/Foo.cls')).toBe('apex')
+    expect(detectLanguage('force-app/main/default/triggers/Bar.trigger')).toBe('apex')
+    expect(detectLanguage('C:\\repo\\classes\\ACCOUNTHELPER.CLS')).toBe('apex')
+  })
 })

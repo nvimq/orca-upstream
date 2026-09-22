@@ -101,6 +101,14 @@ const EXT_TO_LANGUAGE: Record<string, string> = {
   '.tf': 'hcl',
   '.hcl': 'hcl',
   '.prisma': 'graphql',
+  // Why: an explicit `language` passed to Monaco's `createModel` overrides its
+  // own extension-based detection, so the bundled Apex grammar (registered
+  // for '.cls' inside Monaco's basic-languages loader) never gets a chance to
+  // fire for a file opened through this map. '.trigger' isn't in Monaco's own
+  // extension list for that grammar at all, so it needs the explicit id here
+  // regardless.
+  '.cls': 'apex',
+  '.trigger': 'apex',
   '.csv': 'csv',
   '.tsv': 'tsv'
 }
