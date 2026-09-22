@@ -250,6 +250,22 @@ export function resolveTerminalShortcutAction(
     event.altKey &&
     !event.shiftKey &&
     event.code?.startsWith('Numpad') !== true &&
+    event.key === 'Delete'
+  ) {
+    // Why: iTerm2 maps ⌥⌦ to readline forward-kill-word (Alt+D) instead of the faithful
+    // CSI 3;3~ xterm emits, which TUIs like Claude Code read as delete-to-end-of-line.
+    if ((getKittyKeyboardFlagsActivePane?.() ?? 0) > 0) {
+      return null
+    }
+    return { type: 'sendInput', data: '\x1bd' }
+  }
+
+  if (
+    !event.metaKey &&
+    !event.ctrlKey &&
+    event.altKey &&
+    !event.shiftKey &&
+    event.code?.startsWith('Numpad') !== true &&
     (event.key === 'ArrowLeft' || event.key === 'ArrowRight')
   ) {
     // Why: a kitty-protocol TUI binds alt+arrow via xterm's native CSI 1;3D/C; \eb/\ef would reach it as alt+b/f.
