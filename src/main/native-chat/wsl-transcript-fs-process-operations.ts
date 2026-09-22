@@ -36,7 +36,7 @@ export class WslTranscriptFsProcessOperations {
         return lstat(request.path)
       case 'readdir':
         return (await readdir(request.path, { withFileTypes: true })).map(serializeDirent)
-      case 'readfile':
+      case 'readfile': {
         const handle = await open(
           request.path,
           constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0)
@@ -46,6 +46,7 @@ export class WslTranscriptFsProcessOperations {
         } finally {
           await handle.close()
         }
+      }
       case 'open': {
         const handle = await open(request.path, 'r')
         const handleId = this.nextHandleId++
