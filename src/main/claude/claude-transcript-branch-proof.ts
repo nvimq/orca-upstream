@@ -4,8 +4,8 @@
 // read at a later size would vouch for rows nothing checked.
 
 import { open } from 'node:fs/promises'
-import { constants } from 'node:fs'
 import { splitTranscriptStreamLines } from '../native-chat/transcript-stream-lines'
+import { TRANSCRIPT_READ_OPEN_FLAGS } from '../transcript-read-open-flags'
 import {
   ClaudeTranscriptMarkerMissingError,
   ClaudeTranscriptPreviousCursorMissingError,
@@ -94,9 +94,7 @@ async function runPinnedTranscriptPasses<T>(
   maxRecordBytes: number | undefined,
   attempt: (readLines: PinnedTranscriptLines) => Promise<T>
 ): Promise<T> {
-  // Why: O_NOFOLLOW refuses symlink swaps (where supported) and O_NONBLOCK prevents a FIFO from hanging the daemon.
-  const flags = constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0)
-  const handle = await open(transcriptPath, flags)
+  const handle = await open(transcriptPath, TRANSCRIPT_READ_OPEN_FLAGS)
   try {
     let size = (await handle.stat()).size
     let refreshed = false

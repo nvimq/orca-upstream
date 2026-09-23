@@ -1,7 +1,5 @@
-import { constants, createReadStream, type Dirent, type Stats } from 'node:fs'
+import type { Dirent, Stats } from 'node:fs'
 
-export const TRANSCRIPT_READ_FLAGS =
-  constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0)
 import { access, lstat, open, readdir, stat, type FileHandle } from 'node:fs/promises'
 import { Readable } from 'node:stream'
 import { StringDecoder } from 'node:string_decoder'
@@ -17,6 +15,7 @@ import {
 } from './wsl-transcript-fs-process-dispatch'
 import type { WslTranscriptFsReusableProcessCall } from './wsl-transcript-fs-process-protocol'
 import { wslTranscriptFsLaneKey } from './wsl-transcript-fs-route'
+import { TRANSCRIPT_READ_OPEN_FLAGS } from '../transcript-read-open-flags'
 
 /** Never nest a gated call inside another — that deadlocks the scan slot. */
 
@@ -92,7 +91,7 @@ export async function wslGatedReadFile(
 ): Promise<string> {
   return runReusableFsOperation({ operation: 'readfile', path, encoding }, priority, signal, () =>
     (async () => {
-      const h = await open(path, TRANSCRIPT_READ_FLAGS)
+      const h = await open(path, TRANSCRIPT_READ_OPEN_FLAGS)
       try {
         return await h.readFile({ encoding })
       } finally {
@@ -109,7 +108,7 @@ export function wslGatedOpen(
   signal?: AbortSignal
 ): Promise<TranscriptFileHandle> {
   if (!isWslUncPath(path)) {
-    return open(path, TRANSCRIPT_READ_FLAGS)
+    return open(path, TRANSCRIPT_READ_OPEN_FLAGS)
   }
   return runWslTranscriptFsTask<TranscriptFileHandle>(
     {
@@ -274,6 +273,27 @@ async function* gatedChunks(
 }
 
 /**
+ * `createReadStream`'s `flags` is a string mode, which cannot express
+ * `O_NOFOLLOW`/`O_NONBLOCK`, so the local branch opens the descriptor itself
+ * and streams off the handle — the same shape `claude-transcript-branch-proof`
+ * already uses for its pinned passes.
+ */
+async function* localChunks(
+  path: string,
+  options: TranscriptReadStreamOptions,
+  signal?: AbortSignal
+): AsyncGenerator<Buffer | string> {
+  const handle = await open(path, TRANSCRIPT_READ_OPEN_FLAGS)
+  try {
+    // Node destroys the stream with an AbortError on abort, matching how the
+    // gated branch surfaces cancellation to the same consumers.
+    yield* handle.createReadStream({ ...options, autoClose: false, signal })
+  } finally {
+    await handle.close()
+  }
+}
+
+/**
  * A read stream whose UNC branch admits and deadlines each 1 MiB chunk
  * separately. A gate refusal mid-stream surfaces as an `'error'` event carrying
  * the `WslTranscriptFsError`, which every existing consumer funnels into its
@@ -286,9 +306,7 @@ export function openTranscriptReadStream(
   signal?: AbortSignal
 ): Readable {
   if (!isWslUncPath(path)) {
-    // Node destroys the stream with an AbortError on abort, matching how the
-    // gated branch surfaces cancellation to the same consumers.
-    return createReadStream(path, { ...options, flags: TRANSCRIPT_READ_FLAGS, signal })
+    return Readable.from(localChunks(path, options, signal))
   }
   return Readable.from(gatedChunks(path, options, priority, signal))
 }

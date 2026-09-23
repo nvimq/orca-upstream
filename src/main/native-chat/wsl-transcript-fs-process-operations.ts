@@ -1,6 +1,6 @@
 import { access, lstat, open, readdir, stat, type FileHandle } from 'node:fs/promises'
-import { constants } from 'node:fs'
 import type { Dirent } from 'node:fs'
+import { TRANSCRIPT_READ_OPEN_FLAGS } from '../transcript-read-open-flags'
 import {
   invalidTranscriptHandleError,
   type WslTranscriptFsDirent,
@@ -37,10 +37,7 @@ export class WslTranscriptFsProcessOperations {
       case 'readdir':
         return (await readdir(request.path, { withFileTypes: true })).map(serializeDirent)
       case 'readfile': {
-        const handle = await open(
-          request.path,
-          constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0)
-        )
+        const handle = await open(request.path, TRANSCRIPT_READ_OPEN_FLAGS)
         try {
           return await handle.readFile({ encoding: request.encoding })
         } finally {
