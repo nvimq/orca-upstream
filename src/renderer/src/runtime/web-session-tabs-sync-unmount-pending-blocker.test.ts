@@ -58,9 +58,15 @@ const LEAF = '11111111-1111-4111-8111-111111111111'
 const MIRROR_TAB_ID = toWebTerminalSurfaceTabId(HOST_TAB)
 const PANE_KEY = makePaneKey(MIRROR_TAB_ID, LEAF)
 
-/** The hook-only host publishes the surface but no agentStatus for it — the
- *  shape that reaches the delete loop after ownership goes back to the host. */
-function makeHostSnapshot(snapshotVersion: number): RuntimeMobileSessionTabsResult {
+/** A hook-only host publishes the surface but no agentStatus for it — the shape
+ *  that reaches the delete loop after ownership goes back to the host.
+ *  `hostState` models the other kind of pane: one the host itself minted status
+ *  for, where a later snapshot without status is the host withdrawing it. */
+function makeHostSnapshot(
+  snapshotVersion: number,
+  hostState?: AgentStatusState,
+  hostNow = 0
+): RuntimeMobileSessionTabsResult {
   return {
     worktree: WT,
     publicationEpoch: HOST_EPOCH,
@@ -78,17 +84,37 @@ function makeHostSnapshot(snapshotVersion: number): RuntimeMobileSessionTabsResu
         isActive: true,
         launchAgent: 'claude',
         status: 'ready' as const,
-        terminal: 'terminal-1'
+        terminal: 'terminal-1',
+        ...(hostState
+          ? {
+              agentStatus: {
+                state: hostState,
+                prompt: 'May I edit src/app.ts?',
+                updatedAt: hostNow,
+                stateStartedAt: hostNow,
+                agentType: 'claude' as const,
+                paneKey: makePaneKey(HOST_TAB, LEAF),
+                tabId: HOST_TAB,
+                worktreeId: WT,
+                stateHistory: []
+              }
+            }
+          : {})
       }
     ]
   }
 }
 
-function applyHostSnapshot(store: TestAppStore, snapshotVersion: number, now: number): void {
+function applyHostSnapshot(
+  store: TestAppStore,
+  snapshotVersion: number,
+  now: number,
+  hostState?: AgentStatusState
+): void {
   vi.setSystemTime(now)
   const patch = applyFreshWebSessionTabsSnapshot(
     store.getState(),
-    makeHostSnapshot(snapshotVersion),
+    makeHostSnapshot(snapshotVersion, hostState, now),
     ENV,
     now
   )
@@ -177,6 +203,19 @@ describe('unmounting a pane does not delete an unresolved agent blocker', () => 
 
     release()
     applyHostSnapshot(store, 2, T0 + 2_000)
+
+    expect(store.getState().agentStatusByPaneKey[PANE_KEY]).toBeUndefined()
+  })
+
+  it('a host-minted blocker the host stops publishing is still deleted at once', () => {
+    const store = seedPairedClientStore()
+    applyHostSnapshot(store, 1, T0, 'waiting')
+    expect(store.getState().agentStatusByPaneKey[PANE_KEY]?.state).toBe('waiting')
+
+    // The host dismissed the row (dropAgentStatus) or closed the leaf: it still
+    // publishes the surface, just without status. That is a withdrawal, not
+    // silence, so the reader owes it no retention.
+    applyHostSnapshot(store, 2, T0 + 1_000)
 
     expect(store.getState().agentStatusByPaneKey[PANE_KEY]).toBeUndefined()
   })
