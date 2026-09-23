@@ -173,6 +173,19 @@ export function buildMirroredAgentStatusPatch(
     if (nextByPaneKey.has(paneKey)) {
       continue
     }
+    // Why: unmount cedes renderer ownership (session-reconcile-dispose), so the
+    // ownership gate below stops covering a pane the moment the user switches
+    // tabs. A host snapshot carrying no status is not a resolution, and deleting
+    // an unanswered question drops it from the sidebar (#22445). Retire a pending
+    // blocker the way an owned row retires: by decaying past the freshness
+    // boundary, never by the absence of a host value.
+    const pendingBlocker = state.agentStatusByPaneKey[paneKey]
+    if (
+      (pendingBlocker.state === 'blocked' || pendingBlocker.state === 'waiting') &&
+      isAgentStatusFresh(pendingBlocker, now)
+    ) {
+      continue
+    }
     // Why: the host surface carrying no status is not proof the agent stopped —
     // hook-only hosts publish nothing for OSC-driven panes. Keep a live entry
     // this renderer owns; it decays through the normal freshness boundary.
