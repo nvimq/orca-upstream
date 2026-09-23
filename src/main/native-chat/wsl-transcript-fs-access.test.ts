@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type * as NodeFsModule from 'node:fs'
 import type * as NodeFsPromisesModule from 'node:fs/promises'
+import { Readable } from 'node:stream'
 import type * as GateModule from './wsl-transcript-fs-gate'
 
 const UNC_PATH = '\\\\wsl.localhost\\Ubuntu\\home\\ada\\.codex\\sessions\\a.jsonl'
@@ -55,9 +56,14 @@ import {
   WSL_TRANSCRIPT_FS_EXACT_TIMEOUT_MS,
   WslTranscriptFsError
 } from './wsl-transcript-fs-gate'
+import { TRANSCRIPT_READ_OPEN_FLAGS } from './transcript-read-open-flags'
 
 function fakeHandle() {
-  return { read: vi.fn(), close: vi.fn(async () => {}) }
+  return {
+    read: vi.fn(),
+    close: vi.fn(async () => {}),
+    createReadStream: vi.fn(() => Readable.from(['body']))
+  }
 }
 
 beforeEach(() => {
@@ -96,28 +102,36 @@ describe('transcript filesystem accessor off WSL UNC', () => {
     const opened = await wslGatedOpen(path, 'exact')
     await wslGatedRead(opened, path, Buffer.alloc(1), 0, 1, 0, 'exact')
     const stream = openTranscriptReadStream(path, { encoding: 'utf-8' }, 'scan')
+    const streamed = await stream.toArray()
 
     expect(mocks.runTask).not.toHaveBeenCalled()
     expect(mocks.stat).toHaveBeenCalledWith(path)
     expect(mocks.readdir).toHaveBeenCalledWith(path, { withFileTypes: true })
     expect(mocks.readFile).toHaveBeenCalledWith(path, 'utf-8')
-    expect(mocks.open).toHaveBeenCalledWith(path, 'r')
-    // Off UNC the raw stream is handed back verbatim, encoding included.
-    expect(stream).toBe('raw-stream')
-    expect(mocks.createReadStream).toHaveBeenCalledWith(path, {
+    // Off UNC the reader opens the descriptor itself so the hardened flags apply
+    // to the gated open and to the stream alike.
+    expect(mocks.open).toHaveBeenCalledTimes(2)
+    expect(mocks.open).toHaveBeenLastCalledWith(path, TRANSCRIPT_READ_OPEN_FLAGS)
+    expect(streamed).toEqual(['body'])
+    expect(handle.createReadStream).toHaveBeenCalledWith({
       encoding: 'utf-8',
+      autoClose: false,
       signal: undefined
     })
+    // The stream owns the descriptor it opened and releases it at the end.
+    expect(handle.close).toHaveBeenCalledOnce()
   })
 
-  it('forwards the caller signal so the local stream honours cancellation', () => {
-    mocks.createReadStream.mockReturnValue('raw-stream')
+  it('forwards the caller signal so the local stream honours cancellation', async () => {
+    const handle = fakeHandle()
+    mocks.open.mockResolvedValue(handle)
     const controller = new AbortController()
 
-    openTranscriptReadStream(POSIX_PATH, { start: 4 }, 'exact', controller.signal)
+    await openTranscriptReadStream(POSIX_PATH, { start: 4 }, 'exact', controller.signal).toArray()
 
-    expect(mocks.createReadStream).toHaveBeenCalledWith(POSIX_PATH, {
+    expect(handle.createReadStream).toHaveBeenCalledWith({
       start: 4,
+      autoClose: false,
       signal: controller.signal
     })
   })

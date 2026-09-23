@@ -13,6 +13,7 @@ import {
   type BranchProofInput,
   type ClaudeTranscriptBranchProof
 } from './claude-transcript-branch-graph'
+import { TRANSCRIPT_READ_OPEN_FLAGS } from '../native-chat/transcript-read-open-flags'
 
 export {
   ClaudeTranscriptPreviousCursorMissingError,
@@ -93,7 +94,7 @@ async function runPinnedTranscriptPasses<T>(
   maxRecordBytes: number | undefined,
   attempt: (readLines: PinnedTranscriptLines) => Promise<T>
 ): Promise<T> {
-  const handle = await open(transcriptPath, 'r')
+  const handle = await open(transcriptPath, TRANSCRIPT_READ_OPEN_FLAGS)
   try {
     let size = (await handle.stat()).size
     let refreshed = false
