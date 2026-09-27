@@ -15,6 +15,17 @@ export function sharesWorktreeLineageBoundary(
   child: WorktreeLineageBoundary,
   parent: WorktreeLineageBoundary
 ): boolean {
+  // #23290: a folder-based project can span the Local host and one or more
+  // remote SSH hosts. When both workspaces belong to the same explicit project,
+  // allow a lineage edge across execution hosts (and repos); otherwise keep the
+  // original intra-repo, same-host rule.
+  if (
+    child.projectId !== undefined &&
+    parent.projectId !== undefined &&
+    child.projectId === parent.projectId
+  ) {
+    return true
+  }
   return (
     child.repoId === parent.repoId &&
     (child.hostId === undefined || parent.hostId === undefined || child.hostId === parent.hostId) &&
